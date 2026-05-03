@@ -1,0 +1,93 @@
+import type { CommonScript } from '../types';
+
+export function renderLayout(opts: {
+  title: string;
+  body: string;
+  scripts: CommonScript[];
+}): string {
+  const headScripts = opts.scripts
+    .filter((s) => s.enabled && s.position === 'head')
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((s) => s.html_snippet)
+    .join('\n');
+
+  const bodyScripts = opts.scripts
+    .filter((s) => s.enabled && s.position === 'body_end')
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((s) => s.html_snippet)
+    .join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escHtml(opts.title)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  ${headScripts}
+  <style>${css}</style>
+</head>
+<body>
+  <header>
+    <nav class="nav">
+      <a class="nav-brand" href="/">CodeEmpty</a>
+      <div class="nav-links">
+        <a href="/">Projects</a>
+        <a href="/blog">Blog</a>
+        <a href="/about">About</a>
+      </div>
+    </nav>
+  </header>
+  <main class="main">
+    ${opts.body}
+  </main>
+  <footer class="footer">
+    <p>&copy; ${new Date().getFullYear()} CodeEmpty.com</p>
+  </footer>
+  ${bodyScripts}
+</body>
+</html>`;
+}
+
+export function escHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const css = `
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;color:#1a1a1a;background:#fff;line-height:1.6}
+a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
+img{max-width:100%;height:auto;display:block}
+.nav{max-width:1100px;margin:0 auto;padding:1rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.nav-brand{font-weight:700;font-size:1.2rem;color:#1a1a1a}
+.nav-links{display:flex;gap:1.5rem;font-size:.95rem}
+.nav-links a{color:#555}
+.main{max-width:1100px;margin:0 auto;padding:2rem 1.5rem;min-height:70vh}
+.footer{text-align:center;padding:2rem;color:#888;font-size:.875rem;border-top:1px solid #eee}
+.page-title{font-size:2rem;font-weight:700;margin-bottom:.5rem}
+.page-subtitle{color:#555;margin-bottom:2rem}
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;margin-top:1.5rem}
+.project-card{border:1px solid #e5e7eb;border-radius:.75rem;overflow:hidden;transition:box-shadow .2s}
+.project-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.project-card img{width:100%;height:200px;object-fit:cover}
+.project-card-body{padding:1.25rem}
+.project-card-title{font-size:1.1rem;font-weight:600;margin-bottom:.5rem}
+.project-card-desc{font-size:.9rem;color:#555;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.step{margin-bottom:2.5rem}
+.step-title{font-size:1.25rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #e5e7eb}
+.content-el{margin-bottom:1rem}
+.content-el-title{font-size:1.4rem;font-weight:600}
+.content-el-desc{line-height:1.8}
+.content-el-code{background:#f3f4f6;padding:1rem;border-radius:.5rem;font-family:monospace;font-size:.875rem;white-space:pre-wrap;overflow-x:auto}
+.content-el-url a{display:inline-flex;align-items:center;gap:.4rem}
+.content-el-img img{border-radius:.5rem}
+.youtube-wrapper{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:.5rem}
+.youtube-wrapper iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
+.blog-list{display:flex;flex-direction:column;gap:0}
+.blog-date-group{margin-bottom:2rem}
+.blog-date-label{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:.75rem}
+.blog-entry-link{display:block;padding:.75rem 0;border-bottom:1px solid #f3f4f6;font-weight:500}
+.blog-entry-content{margin-top:1.5rem}
+.back-link{display:inline-flex;align-items:center;gap:.4rem;color:#6b7280;font-size:.9rem;margin-bottom:1.5rem}
+`;

@@ -1,0 +1,112 @@
+import { Hono } from 'hono';
+import type { Env, ContentElement, ParentType } from '../types';
+import { uuid, now } from '../utils';
+import { requireSession, requireOAuthOrSession } from './middleware';
+
+export const contentRoutes = new Hono<{ Bindings: Env }>();
+
+contentRoutes.get('/:parentType/:parentId', requireOAuthOrSession, async (c) => {
+  const { parentType, parentId } = c.req.param();
+  const rows = await c.env.DB.prepare(
+    'SELECT * FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+  )
+    .bind(parentType, parentId)
+    .all<ContentElement>();
+  return c.json(rows.results);
+});
+
+contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
+  const { parentType, parentId } = c.req.param();
+  const body = await c.req.json<Partial<ContentElement>>();
+  if (!body.type) return c.json({ error: 'type is required' }, 400);
+
+  const id = uuid();
+  const ts = now();
+  const maxOrder = await c.env.DB.prepare(
+    'SELECT COALESCE(MAX(sort_order), -1) as m FROM content_elements WHERE parent_type = ? AND parent_id = ?',
+  )
+    .bind(parentType, parentId)
+    .first<{ m: number }>();
+
+  await c.env.DB.prepare(
+    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, ts, ts)
+    .run();
+
+  const el = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>();
+  await invalidateParentCache(c.env, parentType as ParentType, parentId);
+  return c.json(el, 201);
+});
+
+contentRoutes.put('/:id', requireSession, async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json<Partial<ContentElement>>();
+  const existing = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?')
+    .bind(id)
+    .first<ContentElement>();
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+
+  await c.env.DB.prepare(
+    'UPDATE content_elements SET type=?, content=?, sort_order=?, updated_at=? WHERE id=?',
+  )
+    .bind(body.type ?? existing.type, body.content ?? existing.content, body.sort_order ?? existing.sort_order, now(), id)
+    .run();
+
+  await invalidateParentCache(c.env, existing.parent_type, existing.parent_id);
+  return c.json(await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>());
+});
+
+contentRoutes.delete('/:id', requireSession, async (c) => {
+  const existing = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<ContentElement>();
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+
+  await c.env.DB.prepare('DELETE FROM content_elements WHERE id = ?').bind(c.req.param('id')).run();
+  await invalidateParentCache(c.env, existing.parent_type, existing.parent_id);
+  return c.json({ ok: true });
+});
+
+contentRoutes.post('/reorder', requireSession, async (c) => {
+  const { orders } = await c.req.json<{ orders: { id: string; sort_order: number }[] }>();
+  const stmts = orders.map((o) =>
+    c.env.DB.prepare('UPDATE content_elements SET sort_order=?, updated_at=? WHERE id=?').bind(o.sort_order, now(), o.id),
+  );
+  await c.env.DB.batch(stmts);
+  return c.json({ ok: true });
+});
+
+async function invalidateParentCache(env: Env, parentType: ParentType, parentId: string) {
+  let key: string | null = null;
+
+  if (parentType === 'project_step') {
+    const step = await env.DB.prepare('SELECT project_id FROM project_steps WHERE id = ?')
+      .bind(parentId)
+      .first<{ project_id: string }>();
+    if (step) {
+      const project = await env.DB.prepare('SELECT slug FROM projects WHERE id = ?')
+        .bind(step.project_id)
+        .first<{ slug: string }>();
+      if (project) key = `project:${project.slug}`;
+    }
+  } else if (parentType === 'page') {
+    const page = await env.DB.prepare('SELECT slug FROM pages WHERE id = ?')
+      .bind(parentId)
+      .first<{ slug: string }>();
+    if (page) key = `page:${page.slug}`;
+  } else if (parentType === 'blog_entry') {
+    const entry = await env.DB.prepare('SELECT slug FROM blog_entries WHERE id = ?')
+      .bind(parentId)
+      .first<{ slug: string }>();
+    if (entry) key = `blog:${entry.slug}`;
+  }
+
+  if (key) {
+    await env.PAGES_KV.delete(key);
+    await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+    if (parentType === 'blog_entry') await env.PAGES_KV.delete('blog:index');
+    if (parentType === 'project_step') await env.PAGES_KV.delete('home');
+  }
+}

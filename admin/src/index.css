@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #f9fafb;
+}
+
+.prose img { border-radius: 0.5rem; max-width: 100%; }
