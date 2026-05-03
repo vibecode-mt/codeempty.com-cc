@@ -61,14 +61,15 @@ projectRoutes.put('/:id', requireSession, async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
-  const slug = body.slug ?? existing.slug;
+  const resolvedTitle = body.title?.trim() || existing.title;
+  const slug = body.slug?.trim() || existing.slug?.trim() || slugify(resolvedTitle);
   const ts = now();
   await c.env.DB.prepare(
     `UPDATE projects SET slug=?, title=?, description=?, image_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
   )
     .bind(
       slug,
-      body.title ?? existing.title,
+      resolvedTitle,
       body.description ?? existing.description,
       body.image_url ?? existing.image_url,
       body.sort_order ?? existing.sort_order,
