@@ -34,8 +34,11 @@ oauthRoutes.post('/apps', requireSession, async (c) => {
     .bind(id, body.name, clientId, hash, salt, body.scopes ?? 'read', session!.user_id)
     .run();
 
-  // Return secret only once
-  return c.json({ id, name: body.name, client_id: clientId, client_secret: clientSecret, scopes: body.scopes ?? 'read' }, 201);
+  const app = await c.env.DB.prepare(
+    'SELECT id, name, client_id, scopes, created_by, created_at FROM oauth_apps WHERE id = ?',
+  ).bind(id).first();
+  // Return full row + plain-text secret (shown once only)
+  return c.json({ ...app, client_secret: clientSecret }, 201);
 });
 
 oauthRoutes.delete('/apps/:id', requireSession, async (c) => {

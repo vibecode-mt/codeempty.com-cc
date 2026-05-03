@@ -98,7 +98,7 @@ export default function OAuthApps() {
                   <td className="px-4 py-3 font-medium">{a.name}</td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{a.client_id}</td>
                   <td className="px-4 py-3 text-gray-500">{a.scopes}</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{a.created_at.slice(0, 10)}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{a.created_at?.slice(0, 10) ?? '—'}</td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => handleDelete(a.id, a.name)} className="text-red-500 hover:underline text-sm">Delete</button>
                   </td>
