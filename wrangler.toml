@@ -5,12 +5,12 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "codeempty-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "43e48be7-4265-452e-ba99-5e48b152258d"
 
 [[kv_namespaces]]
 binding = "PAGES_KV"
-id = "REPLACE_WITH_YOUR_KV_ID"
-preview_id = "REPLACE_WITH_YOUR_KV_PREVIEW_ID"
+id = "9f80f9c8eda3431a995c43a1d381ec0d"
+preview_id = "9f80f9c8eda3431a995c43a1d381ec0d"
 
 [[r2_buckets]]
 binding = "MEDIA"
