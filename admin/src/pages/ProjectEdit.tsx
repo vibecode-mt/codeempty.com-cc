@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, type Project, type ProjectStep, type ContentElement } from '../api';
 import ContentElementEditor from '../components/ContentElementEditor';
 import ImageUpload from '../components/ImageUpload';
+import HtmlEditor from '../components/HtmlEditor';
 
 export default function ProjectEdit() {
   const { id } = useParams();
@@ -19,6 +20,10 @@ export default function ProjectEdit() {
   const [saved, setSaved] = useState(false);
   const [stepError, setStepError] = useState('');
 
+  // Drag state for steps
+  const dragStep = useRef<number | null>(null);
+  const [dragOverStep, setDragOverStep] = useState<number | null>(null);
+
   useEffect(() => {
     if (id) {
       api.getProject(id).then((p) => {
@@ -29,7 +34,6 @@ export default function ProjectEdit() {
   }, [id]);
 
   useEffect(() => {
-    // Load content for each step
     steps.forEach((s) => {
       if (!stepContent[s.id]) {
         api.listContent('project_step', s.id).then((els) => {
@@ -71,20 +75,38 @@ export default function ProjectEdit() {
     }
   }
 
-  async function deleteStep(id: string) {
+  async function deleteStep(stepId: string) {
     if (!confirm('Delete this step and all its content?')) return;
-    await api.deleteStep(id);
-    setSteps((s) => s.filter((x) => x.id !== id));
+    await api.deleteStep(stepId);
+    setSteps((s) => s.filter((x) => x.id !== stepId));
   }
 
-  async function moveStep(index: number, dir: -1 | 1) {
+  // Drag-and-drop handlers for steps
+  function onStepDragStart(index: number) {
+    dragStep.current = index;
+  }
+
+  function onStepDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOverStep(index);
+  }
+
+  async function onStepDrop(e: React.DragEvent, toIndex: number) {
+    e.preventDefault();
+    const fromIndex = dragStep.current;
+    if (fromIndex === null || fromIndex === toIndex) {
+      dragStep.current = null;
+      setDragOverStep(null);
+      return;
+    }
     const next = [...steps];
-    const target = index + dir;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
     const orders = next.map((s, i) => ({ id: s.id, sort_order: i }));
-    await api.reorderSteps(orders);
     setSteps(next);
+    dragStep.current = null;
+    setDragOverStep(null);
+    await api.reorderSteps(orders);
   }
 
   return (
@@ -101,13 +123,16 @@ export default function ProjectEdit() {
             <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Slug</label>
-            <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="auto-generated" />
+            <label className="block text-sm font-medium mb-1">Slug <span className="text-gray-400 font-normal">(auto-generated if blank)</span></label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="my-project" />
           </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Description / Overview</label>
-          <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-y" rows={3} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+          <HtmlEditor
+            value={form.description}
+            onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+          />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Cover Image</label>
@@ -130,14 +155,22 @@ export default function ProjectEdit() {
       </div>
 
       {projectId && (
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Steps</h2>
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold">Steps <span className="text-sm font-normal text-gray-400">— drag to reorder</span></h2>
+
           {steps.map((step, i) => (
-            <div key={step.id} className="bg-white border rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b">
+            <div
+              key={step.id}
+              draggable
+              onDragStart={() => onStepDragStart(i)}
+              onDragOver={(e) => onStepDragOver(e, i)}
+              onDragLeave={() => setDragOverStep(null)}
+              onDrop={(e) => onStepDrop(e, i)}
+              className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === i && dragStep.current !== i ? 'border-blue-400 shadow-md' : ''}`}
+            >
+              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b cursor-grab active:cursor-grabbing">
+                <span className="text-gray-300 mr-1 select-none" title="Drag to reorder">⠿</span>
                 <span className="font-medium text-sm flex-1">{step.title}</span>
-                <button onClick={() => moveStep(i, -1)} disabled={i === 0} className="text-xs px-1.5 border rounded disabled:opacity-30 hover:bg-gray-100">↑</button>
-                <button onClick={() => moveStep(i, 1)} disabled={i === steps.length - 1} className="text-xs px-1.5 border rounded disabled:opacity-30 hover:bg-gray-100">↓</button>
                 <button onClick={() => deleteStep(step.id)} className="text-xs text-red-500 px-2 border rounded hover:bg-red-50">Delete</button>
               </div>
               <div className="p-4">

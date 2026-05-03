@@ -25,7 +25,7 @@ projectRoutes.post('/', requireSession, async (c) => {
   if (!body.title) return c.json({ error: 'title is required' }, 400);
 
   const id = uuid();
-  const slug = body.slug ?? slugify(body.title);
+  const slug = body.slug?.trim() || slugify(body.title);
   const ts = now();
 
   await c.env.DB.prepare(

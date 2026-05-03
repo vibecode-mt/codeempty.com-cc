@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api, type ContentElement } from '../api';
 import HtmlEditor from './HtmlEditor';
 import ImageUpload from './ImageUpload';
@@ -19,7 +19,12 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   const [urlLabel, setUrlLabel] = useState('');
   const [error, setError] = useState('');
 
+  // Drag state
+  const dragIndex = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
   async function handleAdd() {
+    setError('');
     try {
       let content = newContent;
       if (newType === 'url') {
@@ -30,70 +35,82 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
       setNewContent('');
       setUrlLabel('');
       setAdding(false);
-      setError('');
     } catch (e) {
       setError(String(e));
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(elId: string) {
     if (!confirm('Delete this element?')) return;
-    await api.deleteContent(id);
-    onChange(elements.filter((e) => e.id !== id));
+    await api.deleteContent(elId);
+    onChange(elements.filter((e) => e.id !== elId));
   }
 
-  async function handleUpdate(id: string, content: string) {
-    const updated = await api.updateContent(id, { content });
-    onChange(elements.map((e) => (e.id === id ? updated : e)));
+  async function handleUpdate(elId: string, content: string) {
+    const updated = await api.updateContent(elId, { content });
+    onChange(elements.map((e) => (e.id === elId ? updated : e)));
   }
 
-  async function moveUp(index: number) {
-    if (index === 0) return;
+  // Drag handlers
+  function onDragStart(index: number) {
+    dragIndex.current = index;
+  }
+
+  function onDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOver(index);
+  }
+
+  async function onDrop(e: React.DragEvent, toIndex: number) {
+    e.preventDefault();
+    const fromIndex = dragIndex.current;
+    if (fromIndex === null || fromIndex === toIndex) {
+      dragIndex.current = null;
+      setDragOver(null);
+      return;
+    }
     const next = [...elements];
-    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-    const orders = next.map((e, i) => ({ id: e.id, sort_order: i }));
-    await api.reorderContent(orders);
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    const orders = next.map((el, i) => ({ id: el.id, sort_order: i }));
     onChange(next);
-  }
-
-  async function moveDown(index: number) {
-    if (index === elements.length - 1) return;
-    const next = [...elements];
-    [next[index], next[index + 1]] = [next[index + 1], next[index]];
-    const orders = next.map((e, i) => ({ id: e.id, sort_order: i }));
+    dragIndex.current = null;
+    setDragOver(null);
     await api.reorderContent(orders);
-    onChange(next);
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {elements.map((el, i) => (
-        <ElementRow
+        <div
           key={el.id}
-          el={el}
-          onDelete={() => handleDelete(el.id)}
-          onUpdate={(c) => handleUpdate(el.id, c)}
-          onMoveUp={() => moveUp(i)}
-          onMoveDown={() => moveDown(i)}
-          isFirst={i === 0}
-          isLast={i === elements.length - 1}
-        />
+          draggable
+          onDragStart={() => onDragStart(i)}
+          onDragOver={(e) => onDragOver(e, i)}
+          onDragLeave={() => setDragOver(null)}
+          onDrop={(e) => onDrop(e, i)}
+          className={`border rounded-lg bg-white overflow-hidden transition-all ${dragOver === i && dragIndex.current !== i ? 'border-blue-400 shadow-md' : ''}`}
+        >
+          <ElementRow
+            el={el}
+            onDelete={() => handleDelete(el.id)}
+            onUpdate={(c) => handleUpdate(el.id, c)}
+          />
+        </div>
       ))}
 
       {adding ? (
         <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
-          <div className="flex gap-3">
-            <select
-              value={newType}
-              onChange={(e) => { setNewType(e.target.value); setNewContent(''); }}
-              className="border rounded px-2 py-1.5 text-sm"
-            >
-              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
+          <select
+            value={newType}
+            onChange={(e) => { setNewType(e.target.value); setNewContent(''); }}
+            className="border rounded px-2 py-1.5 text-sm"
+          >
+            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
 
           {newType === 'description' ? (
-            <HtmlEditor value={newContent} onChange={setNewContent} rows={6} />
+            <HtmlEditor value={newContent} onChange={setNewContent} />
           ) : newType === 'image' ? (
             <ImageUpload value={newContent} onChange={setNewContent} />
           ) : newType === 'url' ? (
@@ -115,26 +132,29 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
 
           <div className="flex gap-2">
             <button onClick={handleAdd} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Add</button>
-            <button onClick={() => { setAdding(false); setError(''); }} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-100">Cancel</button>
+            <button onClick={() => { setAdding(false); setError(''); setNewContent(''); }} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-100">Cancel</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} className="w-full border-2 border-dashed rounded-lg py-2 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600 transition-colors">
+        <button
+          onClick={() => setAdding(true)}
+          className="w-full border-2 border-dashed rounded-lg py-2 text-sm text-gray-400 hover:border-blue-400 hover:text-blue-600 transition-colors"
+        >
           + Add content element
         </button>
+      )}
+
+      {elements.length > 1 && !adding && (
+        <p className="text-xs text-gray-400 text-center">Drag elements to reorder</p>
       )}
     </div>
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate, onMoveUp, onMoveDown, isFirst, isLast }: {
+function ElementRow({ el, onDelete, onUpdate }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  isFirst: boolean;
-  isLast: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -142,7 +162,7 @@ function ElementRow({ el, onDelete, onUpdate, onMoveUp, onMoveDown, isFirst, isL
     try { return (JSON.parse(el.content) as { href: string }).href; } catch { return el.content; }
   });
   const [urlLabel, setUrlLabel] = useState(() => {
-    try { return (JSON.parse(el.content) as { label: string }).label ?? ''; } catch { return ''; }
+    try { return (JSON.parse(el.content) as { label?: string }).label ?? ''; } catch { return ''; }
   });
 
   async function save() {
@@ -152,16 +172,18 @@ function ElementRow({ el, onDelete, onUpdate, onMoveUp, onMoveDown, isFirst, isL
     setEditing(false);
   }
 
+  const preview =
+    el.type === 'description' ? '(HTML)'
+    : el.type === 'url' ? urlHref
+    : el.content.slice(0, 100);
+
   return (
-    <div className="border rounded-lg bg-white overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b">
-        <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24">{el.type}</span>
-        <div className="flex-1 text-sm text-gray-700 truncate">
-          {el.type === 'description' ? '(HTML)' : el.type === 'url' ? urlHref : el.content.slice(0, 80)}
-        </div>
-        <div className="flex items-center gap-1 ml-auto">
-          <button onClick={onMoveUp} disabled={isFirst} className="px-1.5 py-0.5 text-xs border rounded disabled:opacity-30 hover:bg-gray-100">↑</button>
-          <button onClick={onMoveDown} disabled={isLast} className="px-1.5 py-0.5 text-xs border rounded disabled:opacity-30 hover:bg-gray-100">↓</button>
+    <>
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing">
+        <span className="text-gray-300 select-none" title="Drag to reorder">⠿</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24 shrink-0">{el.type}</span>
+        <div className="flex-1 text-sm text-gray-700 truncate">{preview}</div>
+        <div className="flex items-center gap-1 ml-auto shrink-0">
           <button onClick={() => setEditing(!editing)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{editing ? 'Cancel' : 'Edit'}</button>
           <button onClick={onDelete} className="px-2 py-0.5 text-xs border rounded text-red-500 hover:bg-red-50">Delete</button>
         </div>
@@ -184,6 +206,6 @@ function ElementRow({ el, onDelete, onUpdate, onMoveUp, onMoveDown, isFirst, isL
           <button onClick={save} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Save</button>
         </div>
       )}
-    </div>
+    </>
   );
 }
