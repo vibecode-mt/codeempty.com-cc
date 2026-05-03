@@ -55,14 +55,18 @@ blogRoutes.put('/:id', requireSession, async (c) => {
     .first<BlogEntry>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
-  const slug = body.slug ? slugify(body.slug) : existing.slug;
+  const resolvedTitle = body.title?.trim() || existing.title;
+  const resolvedDate = body.entry_date || existing.entry_date;
+  const slug = body.slug?.trim()
+    ? slugify(body.slug)
+    : existing.slug?.trim() || slugify(resolvedTitle) + '-' + resolvedDate;
   await c.env.DB.prepare(
     'UPDATE blog_entries SET slug=?, title=?, entry_date=?, published=?, updated_at=? WHERE id=?',
   )
     .bind(
       slug,
-      body.title ?? existing.title,
-      body.entry_date ?? existing.entry_date,
+      resolvedTitle,
+      resolvedDate,
       body.published ?? existing.published,
       now(),
       id,
