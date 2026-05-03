@@ -17,6 +17,7 @@ export default function ProjectEdit() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [stepError, setStepError] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -60,9 +61,14 @@ export default function ProjectEdit() {
 
   async function addStep() {
     if (!projectId || !newStepTitle.trim()) return;
-    const step = await api.createStep(projectId, { title: newStepTitle });
-    setSteps((s) => [...s, step]);
-    setNewStepTitle('');
+    setStepError('');
+    try {
+      const step = await api.createStep(projectId, { title: newStepTitle });
+      setSteps((s) => [...s, step]);
+      setNewStepTitle('');
+    } catch (e) {
+      setStepError(String(e));
+    }
   }
 
   async function deleteStep(id: string) {
@@ -145,17 +151,24 @@ export default function ProjectEdit() {
             </div>
           ))}
 
-          <div className="flex gap-2">
-            <input
-              className="flex-1 border rounded-lg px-3 py-2 text-sm"
-              placeholder="New step title"
-              value={newStepTitle}
-              onChange={(e) => setNewStepTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addStep()}
-            />
-            <button onClick={addStep} className="px-4 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800">
-              Add step
-            </button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                placeholder="New step title — press Enter or click Add step"
+                value={newStepTitle}
+                onChange={(e) => setNewStepTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addStep()}
+              />
+              <button
+                onClick={addStep}
+                disabled={!newStepTitle.trim()}
+                className="px-4 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-40"
+              >
+                Add step
+              </button>
+            </div>
+            {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
           </div>
         </div>
       )}

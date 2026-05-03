@@ -36,6 +36,7 @@ projectRoutes.post('/', requireSession, async (c) => {
     .run();
 
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
+  await c.env.PAGES_KV.delete('home');
   return c.json(project, 201);
 });
 
@@ -156,6 +157,9 @@ projectRoutes.post('/steps/reorder', requireSession, async (c) => {
 
 async function invalidateProjectCache(env: Env, slug: string) {
   const key = `project:${slug}`;
-  await env.PAGES_KV.delete(key);
-  await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+  await Promise.all([
+    env.PAGES_KV.delete(key),
+    env.PAGES_KV.delete('home'),
+    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
+  ]);
 }

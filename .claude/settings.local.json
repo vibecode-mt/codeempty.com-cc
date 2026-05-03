@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path D:\\\\Source\\\\Repos\\\\codeempty.com-cc -Recurse -Force)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx wrangler *)",
+      "Bash(Start-Sleep -Seconds 8)",
+      "Bash(Get-Content \"C:\\\\Users\\\\johnn\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--Source-Repos-codeempty-com-cc\\\\4f1ef4ce-e38d-4ac0-9e54-ba84bf2e32c4\\\\tasks\\\\boyz1di9v.output\" -Tail 30)",
+      "PowerShell(Start-Sleep -Seconds 3; Invoke-RestMethod -Method Post -Uri \"http://127.0.0.1:8788/api/auth/setup\" -ContentType \"application/json\" -Body '{}' | ConvertTo-Json)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Set-Location \"D:\\\\Source\\\\Repos\\\\codeempty.com-cc\"; $proc = Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npx wrangler pages dev dist --port 8788 --compatibility-date 2024-01-01\" -PassThru -WindowStyle Hidden; Start-Sleep -Seconds 7; Write-Output \"PID: $\\($proc.Id\\)\")",
+      "Bash(Test-Path *)",
+      "PowerShell(Set-Location \"D:\\\\Source\\\\Repos\\\\codeempty.com-cc\"; $proc = Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c npx wrangler pages dev dist --port 8788 --compatibility-date 2024-01-01\" -PassThru -WindowStyle Normal; Start-Sleep -Seconds 8; if \\(-not $proc.HasExited\\) { Write-Output \"Server running \\(PID $\\($proc.Id\\)\\)\" } else { Write-Output \"Server exited with code $\\($proc.ExitCode\\)\" })",
+      "PowerShell(Invoke-RestMethod -Uri \"http://127.0.0.1:8788/api/health\" | ConvertTo-Json)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git remote *)"
+    ]
+  }
+}
