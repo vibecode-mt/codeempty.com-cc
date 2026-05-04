@@ -90,13 +90,26 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     };
   }, [onTimeUpdate, onDurationChange]);
 
-  // Pause video before seeking to avoid AbortError play/pause race
+  // Pause video before seeking to avoid AbortError play/pause race.
+  // Resume is attached to window mouseup/touchend so it fires even when the
+  // pointer is released outside the slider element.
   function onSeekStart() {
     const v = videoRef.current;
     if (!v) return;
     seekingRef.current = true;
     wasPlayingRef.current = !v.paused;
     v.pause();
+
+    function finish() {
+      window.removeEventListener('mouseup', finish);
+      window.removeEventListener('touchend', finish);
+      seekingRef.current = false;
+      if (wasPlayingRef.current) {
+        videoRef.current?.play().catch(() => {});
+      }
+    }
+    window.addEventListener('mouseup', finish);
+    window.addEventListener('touchend', finish);
   }
 
   function onSeekChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -104,13 +117,6 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     if (videoRef.current) videoRef.current.currentTime = t;
     setCurrentTime(t);
     onTimeUpdate?.(t);
-  }
-
-  function onSeekEnd() {
-    seekingRef.current = false;
-    if (wasPlayingRef.current) {
-      videoRef.current?.play().catch(() => {});
-    }
   }
 
   function jump(delta: number) {
@@ -171,7 +177,12 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const t = e.target as Element;
+      if (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t.closest('[contenteditable="true"]')
+      ) return;
       if (e.code === 'Space') {
         e.preventDefault();
         const v = videoRef.current;
@@ -224,9 +235,7 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
         step={0.1}
         value={currentTime}
         onMouseDown={onSeekStart}
-        onMouseUp={onSeekEnd}
         onTouchStart={onSeekStart}
-        onTouchEnd={onSeekEnd}
         onChange={onSeekChange}
         className="w-full accent-blue-500 cursor-pointer h-2"
       />
