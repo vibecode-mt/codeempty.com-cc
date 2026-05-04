@@ -1,5 +1,5 @@
 import type { Env, Project, ProjectStep, ContentElement, CommonScript } from '../types';
-import { renderLayout, escHtml } from './layout';
+import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElements } from './content';
 
 export async function renderProject(slug: string, env: Env): Promise<Response> {
@@ -7,9 +7,10 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
-  const [project, scriptsResult] = await Promise.all([
+  const [project, scriptsResult, navPages] = await Promise.all([
     env.DB.prepare('SELECT * FROM projects WHERE slug = ? AND published = 1').bind(slug).first<Project>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
+    fetchNavPages(env),
   ]);
 
   if (!project) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
@@ -42,12 +43,12 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   const body = `
     <a class="back-link" href="/">&#8592; Back to Projects</a>
     <h1 class="page-title">${escHtml(project.title)}</h1>
-    ${project.description ? `<p class="page-subtitle">${escHtml(project.description)}</p>` : ''}
+    ${project.description ? `<p class="page-subtitle">${project.description}</p>` : ''}
     ${project.image_url ? `<img src="${escHtml(project.image_url)}" alt="${escHtml(project.title)}" style="border-radius:.75rem;margin-bottom:2rem;max-height:400px;width:100%;object-fit:cover">` : ''}
     ${stepHtml.join('')}
   `;
 
-  const html = renderLayout({ title: `${project.title} — CodeEmpty`, body, scripts });
+  const html = renderLayout({ title: `${project.title} — CodeEmpty`, body, scripts, navPages });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(
     'INSERT OR REPLACE INTO cache_keys (cache_key, content_hash, cached_at) VALUES (?, ?, datetime(\'now\'))',

@@ -37,6 +37,7 @@ export default function Pages() {
                 <th className="px-4 py-3 text-left font-medium">Title</th>
                 <th className="px-4 py-3 text-left font-medium">Slug (URL)</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">In Menu</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -49,6 +50,9 @@ export default function Pages() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${p.published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {p.published ? 'Published' : 'Draft'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {p.show_in_menu ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Yes</span> : <span className="text-gray-400 text-xs">No</span>}
                   </td>
                   <td className="px-4 py-3 text-right space-x-2">
                     <Link to={`/pages/${p.id}`} className="text-blue-600 hover:underline">Edit</Link>

@@ -14,8 +14,15 @@ export function renderContentElement(el: ContentElement): string {
       return `<div class="content-el content-el-desc">${el.content}</div>`;
     case 'prompt_code':
       return `<div class="content-el content-el-code">${escHtml(el.content)}</div>`;
-    case 'image':
-      return `<div class="content-el content-el-img"><img src="${escHtml(el.content)}" alt="" loading="lazy"></div>`;
+    case 'image': {
+      let imgUrl = el.content;
+      let caption = '';
+      try {
+        const parsed = JSON.parse(el.content) as { url?: string; caption?: string };
+        if (parsed.url !== undefined) { imgUrl = parsed.url; caption = parsed.caption ?? ''; }
+      } catch { /* plain URL */ }
+      return `<div class="content-el content-el-img"><img src="${escHtml(imgUrl)}" alt="" loading="lazy">${caption ? `<div class="content-el-img-caption">${caption}</div>` : ''}</div>`;
+    }
     case 'youtube': {
       const id = youtubeId(el.content);
       return `<div class="content-el"><div class="youtube-wrapper">

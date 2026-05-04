@@ -1,5 +1,5 @@
 import type { Env, BlogEntry, ContentElement, CommonScript } from '../types';
-import { renderLayout, escHtml } from './layout';
+import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElements } from './content';
 
 export async function renderBlogIndex(env: Env): Promise<Response> {
@@ -7,9 +7,10 @@ export async function renderBlogIndex(env: Env): Promise<Response> {
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
-  const [entriesResult, scriptsResult] = await Promise.all([
+  const [entriesResult, scriptsResult, navPages] = await Promise.all([
     env.DB.prepare('SELECT * FROM blog_entries WHERE published = 1 ORDER BY entry_date DESC').all<BlogEntry>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
+    fetchNavPages(env),
   ]);
 
   const entries = entriesResult.results;
@@ -39,7 +40,7 @@ export async function renderBlogIndex(env: Env): Promise<Response> {
     </div>
   `;
 
-  const html = renderLayout({ title: 'Blog — CodeEmpty', body, scripts });
+  const html = renderLayout({ title: 'Blog — CodeEmpty', body, scripts, navPages });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
 
   return new Response(html, { headers: { 'content-type': 'text/html;charset=utf-8' } });
@@ -50,9 +51,10 @@ export async function renderBlogEntry(slug: string, env: Env): Promise<Response>
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
-  const [entry, scriptsResult] = await Promise.all([
+  const [entry, scriptsResult, navPages] = await Promise.all([
     env.DB.prepare('SELECT * FROM blog_entries WHERE slug = ? AND published = 1').bind(slug).first<BlogEntry>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
+    fetchNavPages(env),
   ]);
 
   if (!entry) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
@@ -72,7 +74,7 @@ export async function renderBlogEntry(slug: string, env: Env): Promise<Response>
     <div class="blog-entry-content">${renderContentElements(elementsResult.results)}</div>
   `;
 
-  const html = renderLayout({ title: `${entry.title} — CodeEmpty`, body, scripts });
+  const html = renderLayout({ title: `${entry.title} — CodeEmpty`, body, scripts, navPages });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(
     "INSERT OR REPLACE INTO cache_keys (cache_key, content_hash, cached_at) VALUES (?, ?, datetime('now'))",

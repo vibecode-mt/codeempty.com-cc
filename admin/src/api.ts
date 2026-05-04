@@ -95,7 +95,7 @@ export interface ProjectStep {
   created_at: string; updated_at: string;
 }
 export interface Page {
-  id: string; slug: string; title: string; published: number;
+  id: string; slug: string; title: string; published: number; show_in_menu: number;
   created_at: string; updated_at: string;
 }
 export interface BlogEntry {

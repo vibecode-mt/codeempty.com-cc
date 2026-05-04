@@ -112,7 +112,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
           {newType === 'description' ? (
             <HtmlEditor value={newContent} onChange={setNewContent} />
           ) : newType === 'image' ? (
-            <ImageUpload value={newContent} onChange={setNewContent} />
+            <ImageUpload value={newContent} onChange={setNewContent} captionEnabled />
           ) : newType === 'url' ? (
             <div className="space-y-2">
               <input placeholder="URL (https://...)" className="w-full border rounded px-3 py-1.5 text-sm" value={newContent} onChange={(e) => setNewContent(e.target.value)} />
@@ -175,6 +175,7 @@ function ElementRow({ el, onDelete, onUpdate }: {
   const preview =
     el.type === 'description' ? '(HTML)'
     : el.type === 'url' ? urlHref
+    : el.type === 'image' ? (() => { try { return (JSON.parse(el.content) as { url?: string }).url ?? el.content; } catch { return el.content; } })()
     : el.content.slice(0, 100);
 
   return (
@@ -194,7 +195,7 @@ function ElementRow({ el, onDelete, onUpdate }: {
           {el.type === 'description' ? (
             <HtmlEditor value={draft} onChange={setDraft} />
           ) : el.type === 'image' ? (
-            <ImageUpload value={draft} onChange={setDraft} />
+            <ImageUpload value={draft} onChange={setDraft} captionEnabled />
           ) : el.type === 'url' ? (
             <div className="space-y-2">
               <input className="w-full border rounded px-3 py-1.5 text-sm" value={urlHref} onChange={(e) => setUrlHref(e.target.value)} placeholder="URL" />

@@ -1,9 +1,17 @@
-import type { CommonScript } from '../types';
+import type { CommonScript, Env } from '../types';
+
+export async function fetchNavPages(env: Env): Promise<{ title: string; slug: string }[]> {
+  const result = await env.DB.prepare(
+    'SELECT title, slug FROM pages WHERE published = 1 AND show_in_menu = 1 ORDER BY title ASC',
+  ).all<{ title: string; slug: string }>();
+  return result.results;
+}
 
 export function renderLayout(opts: {
   title: string;
   body: string;
   scripts: CommonScript[];
+  navPages?: { title: string; slug: string }[];
 }): string {
   const headScripts = opts.scripts
     .filter((s) => s.enabled && s.position === 'head')
@@ -35,7 +43,7 @@ export function renderLayout(opts: {
       <div class="nav-links">
         <a href="/">Projects</a>
         <a href="/blog">Blog</a>
-        <a href="/about">About</a>
+        ${(opts.navPages ?? []).map((p) => `<a href="/${escHtml(p.slug)}">${escHtml(p.title)}</a>`).join('')}
       </div>
     </nav>
   </header>
@@ -82,6 +90,7 @@ img{max-width:100%;height:auto;display:block}
 .content-el-code{background:#f3f4f6;padding:1rem;border-radius:.5rem;font-family:monospace;font-size:.875rem;white-space:pre-wrap;overflow-x:auto}
 .content-el-url a{display:inline-flex;align-items:center;gap:.4rem}
 .content-el-img img{border-radius:.5rem}
+.content-el-img-caption{font-size:.875rem;color:#555;margin-top:.5rem;line-height:1.6}
 .youtube-wrapper{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:.5rem}
 .youtube-wrapper iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
 .blog-list{display:flex;flex-direction:column;gap:0}

@@ -8,7 +8,7 @@ export default function PageEdit() {
   const navigate = useNavigate();
   const isNew = !id;
 
-  const [form, setForm] = useState({ title: '', slug: '', published: 1 });
+  const [form, setForm] = useState({ title: '', slug: '', published: 1, show_in_menu: 0 });
   const [elements, setElements] = useState<ContentElement[]>([]);
   const [pageId, setPageId] = useState<string | null>(id ?? null);
   const [saving, setSaving] = useState(false);
@@ -18,7 +18,7 @@ export default function PageEdit() {
   useEffect(() => {
     if (id) {
       Promise.all([api.getPage(id), api.listContent('page', id)]).then(([p, els]) => {
-        setForm({ title: p.title, slug: p.slug, published: p.published });
+        setForm({ title: p.title, slug: p.slug, published: p.published, show_in_menu: p.show_in_menu });
         setElements(els);
       });
     }
@@ -62,9 +62,15 @@ export default function PageEdit() {
             <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="about" />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="pub" checked={!!form.published} onChange={(e) => setForm((f) => ({ ...f, published: e.target.checked ? 1 : 0 }))} />
-          <label htmlFor="pub" className="text-sm font-medium">Published</label>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="pub" checked={!!form.published} onChange={(e) => setForm((f) => ({ ...f, published: e.target.checked ? 1 : 0 }))} />
+            <label htmlFor="pub" className="text-sm font-medium">Published</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="show_in_menu" checked={!!form.show_in_menu} onChange={(e) => setForm((f) => ({ ...f, show_in_menu: e.target.checked ? 1 : 0 }))} />
+            <label htmlFor="show_in_menu" className="text-sm font-medium">Show in menu</label>
+          </div>
         </div>
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
