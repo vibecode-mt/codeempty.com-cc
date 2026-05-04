@@ -159,14 +159,14 @@ export default function ProjectEdit() {
   const pid = projectId ?? id;
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center gap-3">
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 max-w-3xl">
         <Link to="/projects" className="text-gray-400 hover:text-gray-700">← Projects</Link>
         <h1 className="text-2xl font-bold">{isNew ? 'New Project' : 'Edit Project'}</h1>
       </div>
 
       {/* Project metadata form */}
-      <div className="bg-white border rounded-xl p-6 space-y-4">
+      <div className="bg-white border rounded-xl p-6 space-y-4 max-w-3xl">
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Title *</label>
@@ -261,7 +261,7 @@ export default function ProjectEdit() {
 
       {/* Steps */}
       {pid && (
-        <div className="space-y-3">
+        <div className="space-y-3 max-w-3xl">
           <h2 className="text-lg font-semibold">Steps <span className="text-sm font-normal text-gray-400">— drag to reorder</span></h2>
 
           {steps.map((step, i) => (

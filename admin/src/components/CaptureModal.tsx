@@ -149,13 +149,8 @@ export default function CaptureModal({ projectId, screenshotUrl, timestampMs, ex
           {/* Element content */}
           {elementType === 'image' ? (
             <div>
-              <label className="block text-sm font-medium mb-1">Caption <span className="font-normal text-gray-400">(optional, HTML)</span></label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 text-sm"
-                placeholder="Image caption"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-              />
+              <label className="block text-sm font-medium mb-1">Caption <span className="font-normal text-gray-400">(optional)</span></label>
+              <HtmlEditor value={caption} onChange={setCaption} />
             </div>
           ) : elementType === 'description' ? (
             <div>
