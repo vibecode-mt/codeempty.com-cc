@@ -46,6 +46,84 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
   const [captureError, setCaptureError] = useState('');
   const [editingTime, setEditingTime] = useState(false);
   const [timeInput, setTimeInput] = useState('');
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState(0);
+
+  // Blob URL caching for instant seeking
+  const [videoSrc, setVideoSrc] = useState(`/api/media/${videoKey}`);
+  const [cached, setCached] = useState(false);
+  const [caching, setCaching] = useState(false);
+  const [cacheProgress, setCacheProgress] = useState(0);
+  const [cacheError, setCacheError] = useState('');
+  const blobUrlRef = useRef<string | null>(null);
+  const pendingRestoreRef = useRef<number | null>(null);
+
+  // Revoke blob URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    };
+  }, []);
+
+  // After src changes to a blob URL, restore the playback position
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || pendingRestoreRef.current === null) return;
+    const t = pendingRestoreRef.current;
+    pendingRestoreRef.current = null;
+    function restore() { v.currentTime = t; }
+    v.addEventListener('loadedmetadata', restore, { once: true });
+    return () => v.removeEventListener('loadedmetadata', restore);
+  }, [videoSrc]);
+
+  async function cacheVideo() {
+    if (caching || cached) return;
+    setCaching(true);
+    setCacheProgress(0);
+    setCacheError('');
+    try {
+      const res = await fetch(`/api/media/${videoKey}`, { credentials: 'include' });
+      if (!res.ok || !res.body) throw new Error(`Fetch failed: ${res.status}`);
+
+      const contentLength = parseInt(res.headers.get('Content-Length') ?? '0', 10);
+      const contentType = res.headers.get('Content-Type') ?? 'video/mp4';
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      let lastReportedPct = -1;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          received += value.length;
+        }
+        if (contentLength > 0) {
+          const pct = Math.round((received / contentLength) * 100);
+          if (pct !== lastReportedPct) {
+            lastReportedPct = pct;
+            setCacheProgress(pct);
+          }
+        }
+      }
+
+      const blob = new Blob(chunks, { type: contentType });
+      const url = URL.createObjectURL(blob);
+
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = url;
+
+      // Save position to restore after src switch
+      pendingRestoreRef.current = videoRef.current?.currentTime ?? 0;
+      setVideoSrc(url);
+      setCached(true);
+    } catch (e) {
+      setCacheError(`Caching failed: ${e}`);
+    } finally {
+      setCaching(false);
+    }
+  }
 
   // Track whether the user is actively dragging the seek slider
   const seekingRef = useRef(false);
@@ -67,7 +145,6 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onTime = () => {
-      // Don't update state while the slider is being dragged — we update it directly in onSeekChange
       if (seekingRef.current) return;
       setCurrentTime(video.currentTime);
       onTimeUpdate?.(video.currentTime);
@@ -90,9 +167,7 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     };
   }, [onTimeUpdate, onDurationChange]);
 
-  // Pause video before seeking to avoid AbortError play/pause race.
-  // Resume is attached to window mouseup/touchend so it fires even when the
-  // pointer is released outside the slider element.
+  // Pause before seeking to avoid AbortError; resume via window mouseup
   function onSeekStart() {
     const v = videoRef.current;
     if (!v) return;
@@ -217,28 +292,73 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
 
   return (
     <div className="space-y-3">
-      {/* Video — fills full container width, aspect ratio preserved by browser */}
+      {/* Cache-for-seeking bar */}
+      <div className="flex items-center gap-3 text-sm">
+        {cached ? (
+          <span className="flex items-center gap-1.5 text-green-700 text-xs font-medium">
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+            Cached in memory — seeking is instant
+          </span>
+        ) : caching ? (
+          <div className="flex items-center gap-2 flex-1">
+            <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+              <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${cacheProgress}%` }} />
+            </div>
+            <span className="text-xs text-gray-500 tabular-nums shrink-0">{cacheProgress}%</span>
+            <span className="text-xs text-gray-400 shrink-0">Downloading for fast seeking…</span>
+          </div>
+        ) : (
+          <button
+            onClick={cacheVideo}
+            className="text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 text-gray-600 flex items-center gap-1.5"
+            title="Download the full video into browser memory for instant seeking"
+          >
+            ⚡ Cache for fast seeking
+          </button>
+        )}
+        {cacheError && <span className="text-xs text-red-500">{cacheError}</span>}
+      </div>
+
+      {/* Video — fills full container width; preload=auto lets browser buffer ahead */}
       <div className="bg-black rounded-lg overflow-hidden">
         <video
           ref={videoRef}
-          src={`/api/media/${videoKey}`}
+          src={videoSrc}
           className="w-full"
-          preload="metadata"
+          preload="auto"
         />
       </div>
 
-      {/* Seek slider — full width */}
-      <input
-        type="range"
-        min={0}
-        max={duration || 1}
-        step={0.1}
-        value={currentTime}
-        onMouseDown={onSeekStart}
-        onTouchStart={onSeekStart}
-        onChange={onSeekChange}
-        className="w-full accent-blue-500 cursor-pointer h-2"
-      />
+      {/* Seek slider with hover-time tooltip */}
+      <div className="relative">
+        {hoverTime !== null && (
+          <div
+            className="absolute bottom-full mb-1 -translate-x-1/2 bg-gray-800 text-white text-xs font-mono rounded px-1.5 py-0.5 pointer-events-none whitespace-nowrap"
+            style={{ left: Math.max(30, Math.min(hoverX, 9999)) }}
+          >
+            {formatTime(hoverTime)}
+          </div>
+        )}
+        <input
+          type="range"
+          min={0}
+          max={duration || 1}
+          step={0.1}
+          value={currentTime}
+          onMouseDown={onSeekStart}
+          onTouchStart={onSeekStart}
+          onChange={onSeekChange}
+          onMouseMove={(e) => {
+            if (!duration) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            setHoverX(x);
+            setHoverTime((x / rect.width) * duration);
+          }}
+          onMouseLeave={() => setHoverTime(null)}
+          className="w-full accent-blue-500 cursor-pointer h-2"
+        />
+      </div>
 
       {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -253,14 +373,12 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
           {playing ? '⏸ Pause' : '▶ Play'}
         </button>
 
-        {/* Jump back */}
         <div className="flex gap-1 shrink-0">
           <JumpBtn delta={-300} label="−5m" />
           <JumpBtn delta={-30} label="−30s" />
           <JumpBtn delta={-5} label="−5s" />
         </div>
 
-        {/* Editable time display */}
         <div className="flex items-center gap-1 mx-1 shrink-0">
           {editingTime ? (
             <input
@@ -287,18 +405,16 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
           <span className="text-xs text-gray-400 font-mono tabular-nums">/ {formatTime(duration)}</span>
         </div>
 
-        {/* Jump forward */}
         <div className="flex gap-1 shrink-0">
           <JumpBtn delta={5} label="+5s" />
           <JumpBtn delta={30} label="+30s" />
           <JumpBtn delta={300} label="+5m" />
         </div>
 
-        {/* Fullscreen */}
         <button
           onClick={toggleFullscreen}
           className="ml-auto px-2.5 py-1.5 text-gray-500 border rounded hover:bg-gray-100 text-sm shrink-0"
-          title="Fullscreen (native browser fullscreen)"
+          title="Fullscreen"
         >
           ⛶
         </button>
