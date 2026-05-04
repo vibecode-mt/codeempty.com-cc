@@ -125,9 +125,11 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     }
   }
 
-  // Track whether the user is actively dragging the seek slider
+  // Seek drag state
   const seekingRef = useRef(false);
   const wasPlayingRef = useRef(false);
+  const sliderValueRef = useRef(0);      // latest slider position during drag
+  const finishSeekRef = useRef<(() => void) | null>(null);  // one active mouseup handler at a time
 
   useEffect(() => {
     if (seekRef) {
@@ -167,31 +169,51 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     };
   }, [onTimeUpdate, onDurationChange]);
 
-  // Pause before seeking to avoid AbortError; resume via window mouseup
   function onSeekStart() {
     const v = videoRef.current;
     if (!v) return;
+
+    // Remove any previous finish handler — rapid drag-release-drag stacks handlers
+    // without this, causing multiple play() calls and the 20s hang
+    if (finishSeekRef.current) {
+      window.removeEventListener('mouseup', finishSeekRef.current);
+      window.removeEventListener('touchend', finishSeekRef.current);
+    }
+
+    if (!seekingRef.current) wasPlayingRef.current = !v.paused;
     seekingRef.current = true;
-    wasPlayingRef.current = !v.paused;
     v.pause();
 
-    function finish() {
+    const finish = () => {
       window.removeEventListener('mouseup', finish);
       window.removeEventListener('touchend', finish);
+      finishSeekRef.current = null;
       seekingRef.current = false;
-      if (wasPlayingRef.current) {
-        videoRef.current?.play().catch(() => {});
-      }
-    }
+
+      // Apply the final position in one go — avoids flooding the server with
+      // one Range request per pixel dragged when the video isn't blob-cached
+      v.currentTime = sliderValueRef.current;
+      setCurrentTime(sliderValueRef.current);
+      onTimeUpdate?.(sliderValueRef.current);
+
+      if (wasPlayingRef.current) v.play().catch(() => {});
+    };
+
+    finishSeekRef.current = finish;
     window.addEventListener('mouseup', finish);
     window.addEventListener('touchend', finish);
   }
 
   function onSeekChange(e: React.ChangeEvent<HTMLInputElement>) {
     const t = Number(e.target.value);
-    if (videoRef.current) videoRef.current.currentTime = t;
+    sliderValueRef.current = t;
+    // Always update slider display and timeline so the UI feels responsive
     setCurrentTime(t);
     onTimeUpdate?.(t);
+    // Only push to the video element when data is local (blob-cached).
+    // Without caching, every change fires a Range request; 100+ during a drag
+    // saturates the browser's connection pool and causes the 20s hang.
+    if (cached && videoRef.current) videoRef.current.currentTime = t;
   }
 
   function jump(delta: number) {
@@ -262,7 +284,7 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
         e.preventDefault();
         const v = videoRef.current;
         if (!v) return;
-        playing ? v.pause() : v.play();
+        playing ? v.pause() : v.play().catch(() => {});
       } else if (e.code === 'KeyF') {
         e.preventDefault();
         captureFrame();
@@ -366,7 +388,7 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
           onClick={() => {
             const v = videoRef.current;
             if (!v) return;
-            playing ? v.pause() : v.play();
+            playing ? v.pause() : v.play().catch(() => {});
           }}
           className="px-3 py-1.5 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 min-w-[76px] shrink-0"
         >
