@@ -47,7 +47,10 @@ export default function Projects() {
             <tbody className="divide-y">
               {projects.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{p.title}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {p.title}
+                    {p.video_key && <span className="ml-2 text-xs text-gray-400" title="Has video">🎬</span>}
+                  </td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{p.slug}</td>
                   <td className="px-4 py-3">
                     <button

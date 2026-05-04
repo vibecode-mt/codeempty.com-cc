@@ -29,11 +29,16 @@ contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
     .first<{ m: number }>();
 
   await c.env.DB.prepare(
-    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, ts, ts)
+    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, ts, ts)
     .run();
+
+  // If a timestamp is provided, re-sort elements within this parent so sort_order reflects timestamp order
+  if (body.video_timestamp_ms != null) {
+    await resortElementsByTimestamp(c.env, parentType as ParentType, parentId);
+  }
 
   const el = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>();
   await invalidateParentCache(c.env, parentType as ParentType, parentId);
@@ -49,10 +54,22 @@ contentRoutes.put('/:id', requireSession, async (c) => {
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
   await c.env.DB.prepare(
-    'UPDATE content_elements SET type=?, content=?, sort_order=?, updated_at=? WHERE id=?',
+    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, updated_at=? WHERE id=?',
   )
-    .bind(body.type ?? existing.type, body.content ?? existing.content, body.sort_order ?? existing.sort_order, now(), id)
+    .bind(
+      body.type ?? existing.type,
+      body.content ?? existing.content,
+      body.sort_order ?? existing.sort_order,
+      'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
+      now(),
+      id,
+    )
     .run();
+
+  // Re-sort if timestamp changed
+  if ('video_timestamp_ms' in body) {
+    await resortElementsByTimestamp(c.env, existing.parent_type, existing.parent_id);
+  }
 
   await invalidateParentCache(c.env, existing.parent_type, existing.parent_id);
   return c.json(await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>());
@@ -77,6 +94,27 @@ contentRoutes.post('/reorder', requireSession, async (c) => {
   await c.env.DB.batch(stmts);
   return c.json({ ok: true });
 });
+
+async function resortElementsByTimestamp(env: Env, parentType: ParentType, parentId: string) {
+  const els = await env.DB.prepare(
+    'SELECT id, video_timestamp_ms, sort_order FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+  ).bind(parentType, parentId).all<{ id: string; video_timestamp_ms: number | null; sort_order: number }>();
+
+  const sorted = [...els.results].sort((a, b) => {
+    if (a.video_timestamp_ms != null && b.video_timestamp_ms != null) {
+      return a.video_timestamp_ms - b.video_timestamp_ms;
+    }
+    if (a.video_timestamp_ms != null) return -1;
+    if (b.video_timestamp_ms != null) return 1;
+    return a.sort_order - b.sort_order;
+  });
+
+  if (sorted.length === 0) return;
+  const stmts = sorted.map((s, i) =>
+    env.DB.prepare('UPDATE content_elements SET sort_order=? WHERE id=?').bind(i, s.id),
+  );
+  await env.DB.batch(stmts);
+}
 
 async function invalidateParentCache(env: Env, parentType: ParentType, parentId: string) {
   let key: string | null = null;

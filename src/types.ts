@@ -45,6 +45,8 @@ export interface Project {
   title: string;
   description: string;
   image_url: string | null;
+  video_key: string | null;
+  video_url: string | null;
   sort_order: number;
   published: number;
   created_at: string;
@@ -56,6 +58,7 @@ export interface ProjectStep {
   project_id: string;
   title: string;
   sort_order: number;
+  video_timestamp_ms: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -90,6 +93,7 @@ export interface ContentElement {
   type: ContentElementType;
   content: string;
   sort_order: number;
+  video_timestamp_ms: number | null;
   created_at: string;
   updated_at: string;
 }

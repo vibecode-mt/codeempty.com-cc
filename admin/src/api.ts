@@ -35,6 +35,8 @@ export const api = {
   updateStep: (id: string, b: Partial<ProjectStep>) => req<ProjectStep>('PUT', `/projects/steps/${id}`, b),
   deleteStep: (id: string) => req<{ ok: boolean }>('DELETE', `/projects/steps/${id}`),
   reorderSteps: (orders: { id: string; sort_order: number }[]) => req('POST', '/projects/steps/reorder', { orders }),
+  timeshiftProject: (projectId: string, split_ms: number, offset_ms: number) =>
+    req<{ ok: boolean; shifted: number; elements_shifted: number }>('POST', `/projects/${projectId}/timeshift`, { split_ms, offset_ms }),
 
   // Pages
   listPages: () => req<Page[]>('GET', '/pages'),
@@ -71,13 +73,39 @@ export const api = {
     req<OAuthApp & { client_secret: string }>('POST', '/oauth/apps', b),
   deleteOAuthApp: (id: string) => req<{ ok: boolean }>('DELETE', `/oauth/apps/${id}`),
 
-  // Media
+  // Media — standard image upload (small files)
   uploadMedia: async (file: File) => {
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/media/upload', { method: 'POST', credentials: 'include', body: fd });
     if (!res.ok) throw new Error('Upload failed');
     return res.json() as Promise<{ key: string; url: string }>;
+  },
+
+  // Media — chunked video upload
+  videoUploadInit: async (filename: string, contentType: string) => {
+    return req<{ uploadId: string; key: string }>('POST', '/media/upload/video/init', { filename, contentType });
+  },
+
+  videoUploadChunk: async (key: string, uploadId: string, partNumber: number, chunk: Blob) => {
+    const res = await fetch(
+      `/api/media/upload/video/chunk?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=${partNumber}`,
+      { method: 'POST', credentials: 'include', body: chunk },
+    );
+    if (!res.ok) throw new Error('Chunk upload failed');
+    return res.json() as Promise<{ etag: string }>;
+  },
+
+  videoUploadComplete: async (key: string, uploadId: string, parts: { partNumber: number; etag: string }[]) => {
+    return req<{ key: string; url: string }>('POST', '/media/upload/video/complete', { key, uploadId, parts });
+  },
+
+  videoUploadAbort: async (key: string, uploadId: string) => {
+    const res = await fetch(
+      `/api/media/upload/video/abort?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+    if (!res.ok) throw new Error('Abort failed');
   },
 
   // Cache
@@ -87,11 +115,14 @@ export const api = {
 // Shared types (duplicated from src/types.ts for the admin bundle)
 export interface Project {
   id: string; slug: string; title: string; description: string;
-  image_url: string | null; sort_order: number; published: number;
+  image_url: string | null;
+  video_key: string | null; video_url: string | null;
+  sort_order: number; published: number;
   created_at: string; updated_at: string;
 }
 export interface ProjectStep {
   id: string; project_id: string; title: string; sort_order: number;
+  video_timestamp_ms: number | null;
   created_at: string; updated_at: string;
 }
 export interface Page {
@@ -105,6 +136,7 @@ export interface BlogEntry {
 export interface ContentElement {
   id: string; parent_type: string; parent_id: string;
   type: string; content: string; sort_order: number;
+  video_timestamp_ms: number | null;
   created_at: string; updated_at: string;
 }
 export interface CommonScript {
