@@ -29,10 +29,22 @@ contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
     .first<{ m: number }>();
 
   await c.env.DB.prepare(
-    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, render_style, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, normalizeTags(body.tags), ts, ts)
+    .bind(
+      id,
+      parentType as ParentType,
+      parentId,
+      body.type,
+      body.content ?? '',
+      (maxOrder?.m ?? -1) + 1,
+      body.video_timestamp_ms ?? null,
+      normalizeTags(body.tags),
+      normalizeRenderStyle(body.render_style),
+      ts,
+      ts,
+    )
     .run();
 
   // If a timestamp is provided, re-sort elements within this parent so sort_order reflects timestamp order
@@ -54,7 +66,7 @@ contentRoutes.put('/:id', requireSession, async (c) => {
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
   await c.env.DB.prepare(
-    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, updated_at=? WHERE id=?',
+    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, render_style=?, updated_at=? WHERE id=?',
   )
     .bind(
       body.type ?? existing.type,
@@ -62,6 +74,7 @@ contentRoutes.put('/:id', requireSession, async (c) => {
       body.sort_order ?? existing.sort_order,
       'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
       'tags' in body ? normalizeTags(body.tags) : existing.tags,
+      'render_style' in body ? normalizeRenderStyle(body.render_style) : existing.render_style,
       now(),
       id,
     )
@@ -126,6 +139,14 @@ function normalizeTags(input: unknown): string | null {
   }
   if (set.size === 0) return null;
   return Array.from(set).join(',');
+}
+
+const VALID_RENDER_STYLES = new Set(['ai_response', 'thoughts', 'markdown']);
+function normalizeRenderStyle(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const v = input.trim().toLowerCase();
+  if (!v || v === 'default') return null;
+  return VALID_RENDER_STYLES.has(v) ? v : null;
 }
 
 async function invalidateParentCache(env: Env, parentType: ParentType, parentId: string) {

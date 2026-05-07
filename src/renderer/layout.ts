@@ -91,6 +91,26 @@ img{max-width:100%;height:auto;display:block}
 .content-el-url a{display:inline-flex;align-items:center;gap:.4rem}
 .content-el-img img{border-radius:.5rem}
 .content-el-img-caption{font-size:.875rem;color:#555;margin-top:.5rem;line-height:1.6}
+.render-markdown p{margin:.75em 0}
+.render-markdown code{background:#f3f4f6;padding:.1em .35em;border-radius:.25rem;font-size:.95em}
+.render-markdown pre{background:#1f2937;color:#f3f4f6;padding:1rem;border-radius:.5rem;overflow-x:auto;font-size:.875rem;line-height:1.55}
+.render-markdown pre code{background:transparent;color:inherit;padding:0}
+.render-markdown ul,.render-markdown ol{padding-left:1.5rem;margin:.5em 0}
+.render-markdown blockquote{border-left:3px solid #d1d5db;padding-left:1rem;color:#4b5563;margin:.75em 0}
+.render-ai-response{border-left:3px solid #6366f1;background:#eef2ff;padding:.75rem 1rem;border-radius:.25rem .5rem .5rem .25rem;line-height:1.7}
+.render-ai-response::before{content:"AI response";display:block;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#4338ca;margin-bottom:.4rem}
+.render-ai-response p,.render-ai-response ul,.render-ai-response ol{margin:.5em 0}
+.render-ai-response code{background:rgba(255,255,255,.7);padding:.1em .35em;border-radius:.25rem;font-size:.95em}
+.render-ai-response pre{background:#1e1b4b;color:#e0e7ff;padding:1rem;border-radius:.5rem;overflow-x:auto}
+.render-ai-response pre code{background:transparent;color:inherit;padding:0}
+.render-thoughts{font-style:italic;color:#6b7280;border-left:2px dashed #9ca3af;padding-left:1rem;line-height:1.7}
+.render-thoughts::before{content:"💭 ";font-style:normal}
+.content-el-comment{background:#fafafa;border:1px solid #e5e7eb;border-radius:.5rem;padding:.75rem 1rem}
+.content-el-comment-header{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;font-size:.875rem}
+.content-el-comment-user{font-weight:600;color:#374151}
+.content-el-comment-link{color:#6b7280;font-size:.8rem;text-decoration:none}
+.content-el-comment-link:hover{color:#374151}
+.content-el-comment-body{line-height:1.7;color:#374151}
 .youtube-wrapper{position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:.5rem}
 .youtube-wrapper iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
 .blog-list{display:flex;flex-direction:column;gap:0}

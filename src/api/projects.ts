@@ -162,7 +162,12 @@ projectRoutes.put('/steps/:id', requireSession, async (c) => {
 
 projectRoutes.delete('/steps/:id', requireSession, async (c) => {
   const id = c.req.param('id');
-  await c.env.DB.prepare('DELETE FROM project_steps WHERE id = ?').bind(id).run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "DELETE FROM content_elements WHERE parent_type = 'project_step' AND parent_id = ?",
+    ).bind(id),
+    c.env.DB.prepare('DELETE FROM project_steps WHERE id = ?').bind(id),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -528,3 +533,98 @@ function stripHtml(s: string): string {
     .replace(/&#39;/g, "'")
     .trim();
 }
+
+// Bulk delete steps and/or elements in a project, optionally filtered by tags.
+// scope: 'steps' wipes the matching steps and their elements; 'elements' only matches
+// content_elements directly. tags=[] means "all" (no tag filter).
+projectRoutes.post('/:id/bulk-delete', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
+    .bind(projectId)
+    .first<Project>();
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const body = await c.req.json<{
+    scope: 'steps' | 'elements';
+    tags?: string[];
+    include_untagged?: boolean;
+  }>();
+
+  if (body.scope !== 'steps' && body.scope !== 'elements') {
+    return c.json({ error: 'scope must be "steps" or "elements"' }, 400);
+  }
+
+  const filterTags = (body.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const includeUntagged = body.include_untagged === true;
+
+  const matchesTagFilter = (rowTags: string | null) => {
+    const itemTags = parseTags(rowTags);
+    if (itemTags.length === 0) return includeUntagged || filterTags.length === 0;
+    if (filterTags.length === 0) return true;
+    return itemTags.some((t) => filterTags.includes(t.toLowerCase()));
+  };
+
+  const stmts: D1PreparedStatement[] = [];
+  let stepsDeleted = 0;
+  let elementsDeleted = 0;
+
+  if (body.scope === 'steps') {
+    const steps = await c.env.DB.prepare(
+      'SELECT id, tags FROM project_steps WHERE project_id = ?',
+    )
+      .bind(projectId)
+      .all<{ id: string; tags: string | null }>();
+
+    const targetIds = steps.results.filter((s) => matchesTagFilter(s.tags)).map((s) => s.id);
+    if (targetIds.length > 0) {
+      // Delete the elements under each step first (no FK cascade in schema)
+      // Use one query with placeholders since target list can be large.
+      const placeholders = targetIds.map(() => '?').join(',');
+      stmts.push(
+        c.env.DB.prepare(
+          `DELETE FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders})`,
+        ).bind(...targetIds),
+      );
+      stmts.push(
+        c.env.DB.prepare(
+          `DELETE FROM project_steps WHERE id IN (${placeholders})`,
+        ).bind(...targetIds),
+      );
+      stepsDeleted = targetIds.length;
+    }
+  } else {
+    // elements scope: delete matching elements anywhere under this project's steps
+    const stepRows = await c.env.DB.prepare(
+      'SELECT id FROM project_steps WHERE project_id = ?',
+    )
+      .bind(projectId)
+      .all<{ id: string }>();
+    const stepIds = stepRows.results.map((r) => r.id);
+    if (stepIds.length > 0) {
+      const placeholders = stepIds.map(() => '?').join(',');
+      const els = await c.env.DB
+        .prepare(
+          `SELECT id, tags FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders})`,
+        )
+        .bind(...stepIds)
+        .all<{ id: string; tags: string | null }>();
+      const targetIds = els.results.filter((e) => matchesTagFilter(e.tags)).map((e) => e.id);
+      if (targetIds.length > 0) {
+        const elPlaceholders = targetIds.map(() => '?').join(',');
+        stmts.push(
+          c.env.DB
+            .prepare(`DELETE FROM content_elements WHERE id IN (${elPlaceholders})`)
+            .bind(...targetIds),
+        );
+        elementsDeleted = targetIds.length;
+      }
+    }
+  }
+
+  if (stmts.length > 0) {
+    await c.env.DB.batch(stmts);
+    await invalidateProjectCache(c.env, project.slug);
+  }
+
+  return c.json({ ok: true, steps_deleted: stepsDeleted, elements_deleted: elementsDeleted });
+});

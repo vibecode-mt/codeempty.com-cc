@@ -1,8 +1,38 @@
 import { useRef, useState } from 'react';
-import { api, type ContentElement } from '../api';
+import { api, type ContentElement, type RenderStyle } from '../api';
 import HtmlEditor from './HtmlEditor';
 import ImageUpload from './ImageUpload';
 import TagsEditor from './TagsEditor';
+
+const RENDER_STYLE_OPTIONS: { value: RenderStyle; label: string; help: string }[] = [
+  { value: 'default', label: 'Default (HTML)', help: 'Treat content as raw HTML — the existing editor.' },
+  { value: 'markdown', label: 'Markdown', help: 'Parse content as markdown.' },
+  { value: 'ai_response', label: 'AI response', help: 'Markdown rendering with an "AI response" callout style.' },
+  { value: 'thoughts', label: 'Thoughts', help: 'Markdown rendering styled as inline thoughts.' },
+];
+
+function parseUserComment(content: string): { text: string; username: string; profile_url: string; comment_url: string } {
+  try {
+    const parsed = JSON.parse(content) as { text?: string; username?: string; profile_url?: string; comment_url?: string };
+    return {
+      text: parsed.text ?? '',
+      username: parsed.username ?? '',
+      profile_url: parsed.profile_url ?? '',
+      comment_url: parsed.comment_url ?? '',
+    };
+  } catch {
+    return { text: content, username: '', profile_url: '', comment_url: '' };
+  }
+}
+
+function stringifyUserComment(c: { text: string; username: string; profile_url: string; comment_url: string }): string {
+  return JSON.stringify({
+    text: c.text,
+    username: c.username,
+    profile_url: c.profile_url || undefined,
+    comment_url: c.comment_url || undefined,
+  });
+}
 
 function formatTimestamp(ms: number) {
   const total = ms / 1000;
@@ -19,13 +49,15 @@ interface Props {
   onChange: (els: ContentElement[]) => void;
 }
 
-const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code'];
+const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment'];
 
 export default function ContentElementEditor({ parentType, parentId, elements, onChange }: Props) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('description');
   const [newContent, setNewContent] = useState('');
   const [urlLabel, setUrlLabel] = useState('');
+  const [newRenderStyle, setNewRenderStyle] = useState<RenderStyle>('default');
+  const [newComment, setNewComment] = useState({ text: '', username: '', profile_url: '', comment_url: '' });
   const [error, setError] = useState('');
 
   // Drag state
@@ -38,11 +70,23 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
       let content = newContent;
       if (newType === 'url') {
         content = JSON.stringify({ href: newContent, label: urlLabel || newContent });
+      } else if (newType === 'user_comment') {
+        if (!newComment.text.trim()) {
+          setError('Comment text is required');
+          return;
+        }
+        content = stringifyUserComment(newComment);
       }
-      const el = await api.createContent(parentType, parentId, { type: newType, content });
+      const el = await api.createContent(parentType, parentId, {
+        type: newType,
+        content,
+        render_style: newType === 'description' ? newRenderStyle : null,
+      });
       onChange([...elements, el]);
       setNewContent('');
       setUrlLabel('');
+      setNewComment({ text: '', username: '', profile_url: '', comment_url: '' });
+      setNewRenderStyle('default');
       setAdding(false);
     } catch (e) {
       setError(String(e));
@@ -62,6 +106,11 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
 
   async function handleUpdateTags(elId: string, tags: string) {
     const updated = await api.updateContent(elId, { tags });
+    onChange(elements.map((e) => (e.id === elId ? updated : e)));
+  }
+
+  async function handleUpdateRenderStyle(elId: string, render_style: RenderStyle) {
+    const updated = await api.updateContent(elId, { render_style });
     onChange(elements.map((e) => (e.id === elId ? updated : e)));
   }
 
@@ -113,28 +162,81 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
             onDelete={() => handleDelete(el.id)}
             onUpdate={(c) => handleUpdate(el.id, c)}
             onUpdateTags={(t) => handleUpdateTags(el.id, t)}
+            onUpdateRenderStyle={(s) => handleUpdateRenderStyle(el.id, s)}
           />
         </div>
       ))}
 
       {adding ? (
         <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
-          <select
-            value={newType}
-            onChange={(e) => { setNewType(e.target.value); setNewContent(''); }}
-            className="border rounded px-2 py-1.5 text-sm"
-          >
-            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={newType}
+              onChange={(e) => { setNewType(e.target.value); setNewContent(''); setNewRenderStyle('default'); }}
+              className="border rounded px-2 py-1.5 text-sm"
+            >
+              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {newType === 'description' && (
+              <select
+                value={newRenderStyle}
+                onChange={(e) => setNewRenderStyle(e.target.value as RenderStyle)}
+                className="border rounded px-2 py-1.5 text-sm"
+                title="Render style (default = HTML, others use markdown)"
+              >
+                {RENDER_STYLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
 
           {newType === 'description' ? (
-            <HtmlEditor value={newContent} onChange={setNewContent} />
+            newRenderStyle === 'default' ? (
+              <HtmlEditor value={newContent} onChange={setNewContent} />
+            ) : (
+              <textarea
+                className="w-full border rounded px-3 py-1.5 text-sm resize-y font-mono"
+                rows={6}
+                placeholder="Markdown — supports headings, lists, code blocks, links, **bold**, *italic*"
+                value={newContent}
+                onChange={(e) => setNewContent(e.target.value)}
+              />
+            )
           ) : newType === 'image' ? (
             <ImageUpload value={newContent} onChange={setNewContent} captionEnabled />
           ) : newType === 'url' ? (
             <div className="space-y-2">
               <input placeholder="URL (https://...)" className="w-full border rounded px-3 py-1.5 text-sm" value={newContent} onChange={(e) => setNewContent(e.target.value)} />
               <input placeholder="Label (optional)" className="w-full border rounded px-3 py-1.5 text-sm" value={urlLabel} onChange={(e) => setUrlLabel(e.target.value)} />
+            </div>
+          ) : newType === 'user_comment' ? (
+            <div className="space-y-2">
+              <input
+                placeholder="Username (e.g. @viewer123)"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={newComment.username}
+                onChange={(e) => setNewComment({ ...newComment, username: e.target.value })}
+              />
+              <input
+                placeholder="Profile URL (optional)"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={newComment.profile_url}
+                onChange={(e) => setNewComment({ ...newComment, profile_url: e.target.value })}
+              />
+              <input
+                placeholder="Link to the comment (optional)"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={newComment.comment_url}
+                onChange={(e) => setNewComment({ ...newComment, comment_url: e.target.value })}
+              />
+              <textarea
+                placeholder="Comment text (markdown supported)"
+                className="w-full border rounded px-3 py-1.5 text-sm resize-y"
+                rows={4}
+                value={newComment.text}
+                onChange={(e) => setNewComment({ ...newComment, text: e.target.value })}
+              />
             </div>
           ) : (
             <textarea
@@ -169,11 +271,12 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate, onUpdateTags }: {
+function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
   onUpdateTags: (tags: string) => Promise<void>;
+  onUpdateRenderStyle: (s: RenderStyle) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -183,25 +286,35 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags }: {
   const [urlLabel, setUrlLabel] = useState(() => {
     try { return (JSON.parse(el.content) as { label?: string }).label ?? ''; } catch { return ''; }
   });
+  const [comment, setComment] = useState(() => parseUserComment(el.content));
 
   async function save() {
     let content = draft;
     if (el.type === 'url') content = JSON.stringify({ href: urlHref, label: urlLabel || urlHref });
+    else if (el.type === 'user_comment') content = stringifyUserComment(comment);
     await onUpdate(content);
     setEditing(false);
   }
 
   const preview =
-    el.type === 'description' ? '(HTML)'
+    el.type === 'description' ? (el.render_style && el.render_style !== 'default' ? `(${el.render_style})` : '(HTML)')
     : el.type === 'url' ? urlHref
     : el.type === 'image' ? (() => { try { return (JSON.parse(el.content) as { url?: string }).url ?? el.content; } catch { return el.content; } })()
+    : el.type === 'user_comment' ? (() => { const c = parseUserComment(el.content); return c.username ? `${c.username}: ${c.text.slice(0, 80)}` : c.text.slice(0, 100); })()
     : el.content.slice(0, 100);
+
+  const showRenderBadge = el.type === 'description' && el.render_style && el.render_style !== 'default';
 
   return (
     <>
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing">
         <span className="text-gray-300 select-none" title="Drag to reorder">⠿</span>
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24 shrink-0">{el.type}</span>
+        {showRenderBadge && (
+          <span className="text-xs font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded shrink-0">
+            {el.render_style}
+          </span>
+        )}
         <div className="flex-1 text-sm text-gray-700 truncate">{preview}</div>
         {el.video_timestamp_ms != null && (
           <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
@@ -217,14 +330,67 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags }: {
 
       {editing && (
         <div className="p-3 space-y-2">
+          {el.type === 'description' && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500">Render style:</span>
+              <select
+                value={el.render_style ?? 'default'}
+                onChange={(e) => onUpdateRenderStyle(e.target.value as RenderStyle)}
+                className="border rounded px-2 py-1 text-xs"
+              >
+                {RENDER_STYLE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <span className="text-gray-400">{RENDER_STYLE_OPTIONS.find((o) => o.value === (el.render_style ?? 'default'))?.help}</span>
+            </div>
+          )}
           {el.type === 'description' ? (
-            <HtmlEditor value={draft} onChange={setDraft} />
+            (el.render_style ?? 'default') === 'default' ? (
+              <HtmlEditor value={draft} onChange={setDraft} />
+            ) : (
+              <textarea
+                className="w-full border rounded px-3 py-1.5 text-sm resize-y font-mono"
+                rows={6}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Markdown content"
+              />
+            )
           ) : el.type === 'image' ? (
             <ImageUpload value={draft} onChange={setDraft} captionEnabled />
           ) : el.type === 'url' ? (
             <div className="space-y-2">
               <input className="w-full border rounded px-3 py-1.5 text-sm" value={urlHref} onChange={(e) => setUrlHref(e.target.value)} placeholder="URL" />
               <input className="w-full border rounded px-3 py-1.5 text-sm" value={urlLabel} onChange={(e) => setUrlLabel(e.target.value)} placeholder="Label" />
+            </div>
+          ) : el.type === 'user_comment' ? (
+            <div className="space-y-2">
+              <input
+                placeholder="Username"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={comment.username}
+                onChange={(e) => setComment({ ...comment, username: e.target.value })}
+              />
+              <input
+                placeholder="Profile URL (optional)"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={comment.profile_url}
+                onChange={(e) => setComment({ ...comment, profile_url: e.target.value })}
+              />
+              <input
+                placeholder="Link to the comment (optional)"
+                className="w-full border rounded px-3 py-1.5 text-sm"
+                value={comment.comment_url}
+                onChange={(e) => setComment({ ...comment, comment_url: e.target.value })}
+              />
+              <textarea
+                placeholder="Comment text (markdown supported)"
+                className="w-full border rounded px-3 py-1.5 text-sm resize-y"
+                rows={4}
+                value={comment.text}
+                onChange={(e) => setComment({ ...comment, text: e.target.value })}
+              />
             </div>
           ) : (
             <textarea className="w-full border rounded px-3 py-1.5 text-sm font-mono resize-y" rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />

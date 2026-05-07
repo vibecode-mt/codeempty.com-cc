@@ -10,6 +10,7 @@ import VideoTimeline from '../components/VideoTimeline';
 import CaptureModal from '../components/CaptureModal';
 import CaptionImportModal from '../components/CaptionImportModal';
 import ExportSrtModal from '../components/ExportSrtModal';
+import BulkDeleteModal from '../components/BulkDeleteModal';
 import TagsEditor from '../components/TagsEditor';
 
 function formatTimestamp(ms: number) {
@@ -53,9 +54,10 @@ export default function ProjectEdit() {
   const dragStep = useRef<number | null>(null);
   const [dragOverStep, setDragOverStep] = useState<number | null>(null);
 
-  // Caption import + SRT export state
+  // Caption import + SRT export + bulk delete state
   const [showCaptionImport, setShowCaptionImport] = useState(false);
   const [showExportSrt, setShowExportSrt] = useState(false);
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -422,6 +424,14 @@ export default function ProjectEdit() {
           >
             📤 Export SRT
           </button>
+          <button
+            onClick={() => setShowBulkDelete(true)}
+            disabled={steps.length === 0}
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Bulk delete steps or elements by tag"
+          >
+            🗑 Bulk delete
+          </button>
         </div>
         {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
       </div>
@@ -537,6 +547,27 @@ export default function ProjectEdit() {
           stepContent={stepContent}
           isOpen={showExportSrt}
           onClose={() => setShowExportSrt(false)}
+        />
+      )}
+
+      {/* Bulk delete modal */}
+      {pid && (
+        <BulkDeleteModal
+          projectId={pid}
+          steps={steps}
+          stepContent={stepContent}
+          isOpen={showBulkDelete}
+          onClose={() => setShowBulkDelete(false)}
+          onDeleted={async () => {
+            // Refresh steps + content after a deletion
+            const updated = await api.getProject(pid);
+            setSteps(updated.steps);
+            const map: Record<string, ContentElement[]> = {};
+            for (const step of updated.steps) {
+              map[step.id] = await api.listContent('project_step', step.id);
+            }
+            setStepContent(map);
+          }}
         />
       )}
     </div>

@@ -39,6 +39,20 @@ export const api = {
       default_tags: defaultTags,
     }),
 
+  bulkDelete: (
+    projectId: string,
+    opts: { scope: 'steps' | 'elements'; tags?: string[]; includeUntagged?: boolean },
+  ) =>
+    req<{ ok: boolean; steps_deleted: number; elements_deleted: number }>(
+      'POST',
+      `/projects/${projectId}/bulk-delete`,
+      {
+        scope: opts.scope,
+        tags: opts.tags ?? [],
+        include_untagged: opts.includeUntagged === true,
+      },
+    ),
+
   exportSrtUrl: (projectId: string, opts: { tags?: string[]; includeUntagged?: boolean; includeSteps?: boolean }) => {
     const params = new URLSearchParams();
     if (opts.tags && opts.tags.length > 0) params.set('tags', opts.tags.join(','));
@@ -152,11 +166,13 @@ export interface BlogEntry {
   id: string; slug: string; title: string; entry_date: string; published: number;
   created_at: string; updated_at: string;
 }
+export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export interface ContentElement {
   id: string; parent_type: string; parent_id: string;
   type: string; content: string; sort_order: number;
   video_timestamp_ms: number | null;
   tags: string | null;
+  render_style: RenderStyle | null;
   created_at: string; updated_at: string;
 }
 export interface CommonScript {

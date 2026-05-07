@@ -84,7 +84,15 @@ export interface BlogEntry {
   updated_at: string;
 }
 
-export type ContentElementType = 'image' | 'youtube' | 'title' | 'description' | 'url' | 'prompt_code';
+export type ContentElementType =
+  | 'image'
+  | 'youtube'
+  | 'title'
+  | 'description'
+  | 'url'
+  | 'prompt_code'
+  | 'user_comment';
+export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export type ParentType = 'project_step' | 'page' | 'blog_entry';
 
 export interface ContentElement {
@@ -96,6 +104,7 @@ export interface ContentElement {
   sort_order: number;
   video_timestamp_ms: number | null;
   tags: string | null;
+  render_style: RenderStyle | null;
   created_at: string;
   updated_at: string;
 }

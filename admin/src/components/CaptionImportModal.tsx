@@ -41,11 +41,16 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
 
     try {
       const text = await file.text();
-      const captions = parseCaption(text, file.name);
+      const rawCaptions = parseCaption(text, file.name);
 
-      if (captions.length === 0) {
+      if (rawCaptions.length === 0) {
         throw new Error('No captions found in file');
       }
+
+      // Sort by timestamp before assigning step/element types so that captions from
+      // multiple CapCut text tracks merge into a single chronological sequence.
+      // The modal still displays them grouped by source track via groupId.
+      const captions = [...rawCaptions].sort((a, b) => a.timestampMs - b.timestampMs);
 
       // Auto-detect steps: captions starting with "<num>[letter].", e.g. "23.", "24a.".
       // Track the highest step number so a sub-sequence like 22, 1, 2, 3, 23 treats
