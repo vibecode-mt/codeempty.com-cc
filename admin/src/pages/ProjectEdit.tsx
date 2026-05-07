@@ -22,6 +22,20 @@ function formatTimestamp(ms: number) {
   return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`;
 }
 
+function parseTagList(s: string | null): string[] {
+  if (!s) return [];
+  return s.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+}
+
+function toggleTagInList(current: string | null, tag: string): string {
+  const t = tag.trim().toLowerCase();
+  const list = parseTagList(current);
+  const idx = list.indexOf(t);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(t);
+  return list.join(',');
+}
+
 export default function ProjectEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -61,6 +75,11 @@ export default function ProjectEdit() {
   const [showExportSrt, setShowExportSrt] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showBulkTag, setShowBulkTag] = useState(false);
+  // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
+  // manageTagInput is the draft in the toolbar input; activation happens on the
+  // Start button or Enter so the user can finish typing before the banner kicks in.
+  const [manageTag, setManageTag] = useState('');
+  const [manageTagInput, setManageTagInput] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -141,6 +160,14 @@ export default function ProjectEdit() {
 
   async function toggleStepHidden(step: ProjectStep) {
     const updated = await api.updateStep(step.id, { hidden: step.hidden ? 0 : 1 });
+    setSteps((prev) => prev.map((s) => (s.id === step.id ? updated : s)));
+  }
+
+  async function toggleStepManageTag(step: ProjectStep) {
+    const tag = manageTag.trim();
+    if (!tag) return;
+    const next = toggleTagInList(step.tags, tag);
+    const updated = await api.updateStep(step.id, { tags: next });
     setSteps((prev) => prev.map((s) => (s.id === step.id ? updated : s)));
   }
 
@@ -340,12 +367,50 @@ export default function ProjectEdit() {
   // ── Steps section JSX ──────────────────────────────────────────────────────
   const stepsSection = pid ? (
     <div className="space-y-3">
+      {/* Tag manage banner — sticky strip at the top of the steps area when on */}
+      {manageTag.trim() && (
+        <div className="sticky top-0 z-20 flex items-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-lg shadow">
+          <span className="text-sm">Tag manage mode — click any row's badge to toggle</span>
+          <span className="font-mono text-xs bg-indigo-800 px-2 py-0.5 rounded">{manageTag.trim().toLowerCase()}</span>
+          <button
+            onClick={() => { setManageTag(''); setManageTagInput(''); }}
+            className="ml-auto text-xs bg-white text-indigo-700 px-3 py-0.5 rounded hover:bg-indigo-50"
+          >
+            Exit
+          </button>
+        </div>
+      )}
+
       {/* Steps header + search + filter status */}
       <div className="space-y-2">
         <div className="flex items-center gap-3 flex-wrap">
           <h2 className="text-base font-semibold">
             Steps <span className="text-sm font-normal text-gray-400">— drag ⠿ to reorder</span>
           </h2>
+          {!manageTag && (
+            <div className="flex items-center gap-1">
+              <input
+                value={manageTagInput}
+                onChange={(e) => setManageTagInput(e.target.value)}
+                placeholder="Manage tag (e.g. step:Major)"
+                className="border rounded px-2 py-0.5 text-xs font-mono w-44"
+                title="Type a tag and click Start to enter manage mode — each row will get a one-click toggle"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && manageTagInput.trim()) {
+                    e.preventDefault();
+                    setManageTag(manageTagInput.trim());
+                  }
+                }}
+              />
+              <button
+                onClick={() => manageTagInput.trim() && setManageTag(manageTagInput.trim())}
+                disabled={!manageTagInput.trim()}
+                className="text-xs px-2 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40"
+              >
+                Start
+              </button>
+            </div>
+          )}
           {filteredStepId && (
             <button
               onClick={() => setFilteredStepId(null)}
@@ -421,6 +486,22 @@ export default function ProjectEdit() {
                 }}
                 className="shrink-0"
               />
+              {manageTag && (() => {
+                const has = parseTagList(step.tags).includes(manageTag.toLowerCase());
+                return (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleStepManageTag(step); }}
+                    className={`text-xs px-2 py-0.5 rounded font-mono shrink-0 transition ${
+                      has
+                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        : 'bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50'
+                    }`}
+                    title={has ? `Remove tag "${manageTag}"` : `Add tag "${manageTag}"`}
+                  >
+                    {has ? '✓' : '+'} {manageTag}
+                  </button>
+                );
+              })()}
               {videoKey && (
                 <button
                   onClick={(e) => { e.stopPropagation(); addFrameToStep(step.id); }}
@@ -474,6 +555,7 @@ export default function ProjectEdit() {
                   onChange={(els) => setStepContent((prev) => ({ ...prev, [step.id]: els }))}
                   onSeek={seekToMs}
                   onCaptureFrame={videoKey ? () => videoCaptureRef.current?.() ?? Promise.resolve(null) : undefined}
+                  manageTag={manageTag || undefined}
                 />
               </div>
             )}

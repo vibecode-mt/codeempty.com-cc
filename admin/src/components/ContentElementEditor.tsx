@@ -69,11 +69,12 @@ interface Props {
   onChange: (els: ContentElement[]) => void;
   onSeek?: (timestampMs: number) => void;
   onCaptureFrame?: () => Promise<{ url: string; timestampMs: number } | null>;
+  manageTag?: string;
 }
 
 const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment'];
 
-export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame }: Props) {
+export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame, manageTag }: Props) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('description');
   const [newContent, setNewContent] = useState('');
@@ -138,6 +139,17 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
 
   async function handleToggleHidden(el: ContentElement) {
     const updated = await api.updateContent(el.id, { hidden: el.hidden ? 0 : 1 });
+    onChange(elements.map((e) => (e.id === el.id ? updated : e)));
+  }
+
+  async function handleToggleManageTag(el: ContentElement) {
+    if (!manageTag) return;
+    const tag = manageTag.trim().toLowerCase();
+    const list = (el.tags ?? '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const idx = list.indexOf(tag);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push(tag);
+    const updated = await api.updateContent(el.id, { tags: list.join(',') });
     onChange(elements.map((e) => (e.id === el.id ? updated : e)));
   }
 
@@ -262,6 +274,8 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
             onSeek={onSeek}
             onAddFrame={onCaptureFrame ? () => handleAddFrame(el) : undefined}
             onAddUpload={(f) => handleAddUpload(el, f)}
+            manageTag={manageTag}
+            onToggleManageTag={() => handleToggleManageTag(el)}
           />
         </div>
       ))}
@@ -370,7 +384,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle, onToggleHidden, onSeek, onAddFrame, onAddUpload }: {
+function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle, onToggleHidden, onSeek, onAddFrame, onAddUpload, manageTag, onToggleManageTag }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
@@ -380,6 +394,8 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
   onSeek?: (timestampMs: number) => void;
   onAddFrame?: () => Promise<void>;
   onAddUpload: (file: File) => Promise<void>;
+  manageTag?: string;
+  onToggleManageTag: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -456,6 +472,23 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
           )
         )}
         <TagsEditor tags={el.tags} onChange={onUpdateTags} className="shrink-0" />
+        {manageTag && (() => {
+          const tagL = manageTag.trim().toLowerCase();
+          const has = (el.tags ?? '').split(',').map((t) => t.trim().toLowerCase()).includes(tagL);
+          return (
+            <button
+              onClick={onToggleManageTag}
+              className={`text-xs px-2 py-0.5 rounded font-mono shrink-0 transition ${
+                has
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  : 'bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50'
+              }`}
+              title={has ? `Remove tag "${manageTag}"` : `Add tag "${manageTag}"`}
+            >
+              {has ? '✓' : '+'} {manageTag}
+            </button>
+          );
+        })()}
         <div className="flex items-center gap-1 ml-auto shrink-0">
           {onAddFrame && (
             <button
