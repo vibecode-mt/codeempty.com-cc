@@ -164,15 +164,14 @@ export default function ProjectEdit() {
   }
 
   async function handleCaptionImport(
-    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>,
-    defaultTags?: string,
+    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element'; tags?: string }>,
   ) {
     if (!projectId) {
       throw new Error('Project not found');
     }
 
     try {
-      const result = await api.importCaptions(projectId, captions, defaultTags);
+      const result = await api.importCaptions(projectId, captions);
       // Refresh steps after import
       const updated = await api.getProject(projectId);
       setSteps(updated.steps);

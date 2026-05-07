@@ -31,12 +31,10 @@ export const api = {
   deleteProject: (id: string) => req<{ ok: boolean }>('DELETE', `/projects/${id}`),
   importCaptions: (
     projectId: string,
-    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>,
-    defaultTags?: string,
+    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element'; tags?: string }>,
   ) =>
     req<{ ok: boolean; steps_created: number; total_captions: number }>('POST', `/projects/${projectId}/import-captions`, {
       captions,
-      default_tags: defaultTags,
     }),
 
   bulkDelete: (

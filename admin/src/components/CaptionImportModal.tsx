@@ -19,9 +19,28 @@ interface CaptionImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (
-    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>,
-    defaultTags?: string,
+    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element'; tags?: string }>,
   ) => Promise<void>;
+}
+
+// Default per-track tag derived from the parser's groupId.
+//   "track-0" → "track1", "track-1" → "track2", "subtitles" → "subtitles"
+function defaultTagForGroup(groupId: string): string {
+  const m = groupId.match(/^track-(\d+)$/);
+  if (m) return `track${parseInt(m[1], 10) + 1}`;
+  return groupId;
+}
+
+function mergeTags(...parts: Array<string | undefined>): string {
+  const set = new Set<string>();
+  for (const part of parts) {
+    if (!part) continue;
+    for (const t of part.split(',')) {
+      const trimmed = t.trim().toLowerCase();
+      if (trimmed) set.add(trimmed);
+    }
+  }
+  return Array.from(set).join(',');
 }
 
 export default function CaptionImportModal({ isOpen, onClose, onImport }: CaptionImportModalProps) {
@@ -31,7 +50,9 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
   const [parsed, setParsed] = useState<CaptionWithType[]>([]);
   const [fileName, setFileName] = useState('');
   const [importing, setImporting] = useState(false);
-  const [defaultTags, setDefaultTags] = useState('youtube');
+  const [globalTags, setGlobalTags] = useState('youtube');
+  // Per-group tag override — keyed by groupId, default seeded from defaultTagForGroup().
+  const [groupTags, setGroupTags] = useState<Record<string, string>>({});
 
   const handleFileSelect = async (file: File) => {
     setError('');
@@ -85,6 +106,13 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
       });
 
       setParsed(captionTypes);
+
+      // Seed per-group tag defaults from groupIds in the parsed set.
+      const seed: Record<string, string> = {};
+      for (const cap of captionTypes) {
+        if (!(cap.groupId in seed)) seed[cap.groupId] = defaultTagForGroup(cap.groupId);
+      }
+      setGroupTags(seed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse file');
       setParsed([]);
@@ -146,11 +174,19 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
     setImporting(true);
     try {
       await onImport(
-        selectedItems.map((c) => ({ text: c.text, timestampMs: c.timestampMs, type: c.type })),
-        defaultTags.trim() || undefined,
+        selectedItems.map((c) => {
+          const merged = mergeTags(globalTags, groupTags[c.groupId]);
+          return {
+            text: c.text,
+            timestampMs: c.timestampMs,
+            type: c.type,
+            tags: merged || undefined,
+          };
+        }),
       );
       setParsed([]);
       setFileName('');
+      setGroupTags({});
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
@@ -216,14 +252,18 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
               </p>
 
               <div className="mb-4 flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 shrink-0">Tags:</label>
+                <label className="text-sm font-medium text-gray-700 shrink-0">Global tags:</label>
                 <input
                   className="flex-1 border rounded px-2 py-1 text-sm font-mono"
                   placeholder="comma-separated, applied to every imported item — e.g. youtube,intro"
-                  value={defaultTags}
-                  onChange={(e) => setDefaultTags(e.target.value)}
+                  value={globalTags}
+                  onChange={(e) => setGlobalTags(e.target.value)}
                 />
               </div>
+              <p className="mb-3 text-xs text-gray-500">
+                Each track also gets its own tag (defaulted to <code className="font-mono">track1</code>,{' '}
+                <code className="font-mono">track2</code>, …). Edit on the track header. Final tags = global + per-track.
+              </p>
 
               <div className="space-y-5 max-h-[28rem] overflow-y-auto">
                 {groups.map((g) => {
@@ -232,7 +272,7 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
                   const noneSelected = groupSelectedCount === 0;
                   return (
                     <div key={g.groupId} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="flex items-center gap-3 px-3 py-2 bg-gray-100 border-b border-gray-200">
+                      <div className="flex items-center gap-3 px-3 py-2 bg-gray-100 border-b border-gray-200 flex-wrap">
                         <input
                           type="checkbox"
                           checked={allSelected}
@@ -243,9 +283,21 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
                           className="w-4 h-4 cursor-pointer"
                           title={allSelected ? 'Deselect all in group' : 'Select all in group'}
                         />
-                        <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{g.groupLabel}</span>
+                        <span className="text-sm font-semibold text-gray-700 flex-1 truncate min-w-0">{g.groupLabel}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-xs text-gray-500">tag:</span>
+                          <input
+                            value={groupTags[g.groupId] ?? ''}
+                            onChange={(e) =>
+                              setGroupTags((prev) => ({ ...prev, [g.groupId]: e.target.value }))
+                            }
+                            className="border rounded px-1.5 py-0.5 text-xs font-mono w-28"
+                            placeholder="track1"
+                            title="Tag automatically applied to every item from this track. Comma-separate for multiple."
+                          />
+                        </div>
                         <span className="text-xs text-gray-500 shrink-0">
-                          {groupSelectedCount} / {g.items.length} selected
+                          {groupSelectedCount} / {g.items.length}
                         </span>
                       </div>
                       <div className="space-y-2 p-2">

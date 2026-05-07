@@ -293,6 +293,7 @@ interface ImportCaption {
   text: string;
   timestampMs: number;
   type: 'step' | 'element';
+  tags?: string;
 }
 
 projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
@@ -322,6 +323,9 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
 
   // Group captions: steps are standalone, elements follow their preceding step
   for (const caption of body.captions) {
+    // Per-caption tags take precedence; default_tags is a fallback for older clients.
+    const captionTags = caption.tags != null ? normalizeTags(caption.tags) : defaultTags;
+
     if (caption.type === 'step') {
       const stepId = uuid();
       stepSort++;
@@ -332,7 +336,7 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
         c.env.DB.prepare(
           `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, tags, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, defaultTags, ts, ts),
+        ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, captionTags, ts, ts),
       );
 
       createdSteps.push({ id: stepId, sort_order: stepSort });
@@ -354,7 +358,7 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
           caption.text,
           elementSort,
           caption.timestampMs,
-          defaultTags,
+          captionTags,
           ts,
           ts,
         ),
