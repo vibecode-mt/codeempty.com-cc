@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type ContentElement, type RenderStyle } from '../api';
 import HtmlEditor from './HtmlEditor';
 import ImageUpload from './ImageUpload';
@@ -142,8 +142,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   }
 
   // Convert a description element into an image element. The original description
-  // text becomes the new image's caption, preserving the user's prose. Used by
-  // both the "+frame" and "+upload" buttons on description rows.
+  // text becomes the new image's caption, preserving the user's prose.
   async function convertDescriptionToImage(
     el: ContentElement,
     imageUrl: string,
@@ -159,15 +158,26 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     onChange(elements.map((e) => (e.id === el.id ? updated : e)));
   }
 
-  // Add an image element after the given element's position. Used for the
-  // "+frame"/"+upload" buttons on non-description rows.
+  // Re-capture: replace the URL on an existing image element, preserving caption.
+  async function replaceImageUrl(el: ContentElement, imageUrl: string, timestampMs: number | null) {
+    let caption = '';
+    try { caption = (JSON.parse(el.content) as { caption?: string }).caption ?? ''; } catch { /* leave empty */ }
+    const content = JSON.stringify({ url: imageUrl, caption: caption || undefined });
+    const updated = await api.updateContent(el.id, {
+      content,
+      ...(timestampMs != null ? { video_timestamp_ms: timestampMs } : {}),
+    });
+    onChange(elements.map((e) => (e.id === el.id ? updated : e)));
+  }
+
+  // Add a brand-new image element right after `el`. Used for non-description,
+  // non-image rows where conversion would lose information.
   async function addImageAfter(el: ContentElement, imageUrl: string, timestampMs: number | null) {
     const newEl = await api.createContent(parentType, parentId, {
       type: 'image',
       content: JSON.stringify({ url: imageUrl }),
       ...(timestampMs != null ? { video_timestamp_ms: timestampMs } : {}),
     });
-    // Insert the new element right after `el` to preserve sequence in the editor
     const idx = elements.findIndex((e) => e.id === el.id);
     const next = [...elements];
     if (idx >= 0) next.splice(idx + 1, 0, newEl);
@@ -181,6 +191,8 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     if (!result) return;
     if (el.type === 'description') {
       await convertDescriptionToImage(el, result.url, result.timestampMs);
+    } else if (el.type === 'image') {
+      await replaceImageUrl(el, result.url, result.timestampMs);
     } else {
       await addImageAfter(el, result.url, result.timestampMs);
     }
@@ -190,6 +202,8 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     const { url } = await api.uploadMedia(file);
     if (el.type === 'description') {
       await convertDescriptionToImage(el, url, null);
+    } else if (el.type === 'image') {
+      await replaceImageUrl(el, url, null);
     } else {
       await addImageAfter(el, url, null);
     }
@@ -377,6 +391,22 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
   });
   const [comment, setComment] = useState(() => parseUserComment(el.content));
 
+  // Re-sync derived state when the element's content/type changes from outside
+  // (e.g., after a +frame conversion description → image). Without this, the
+  // edit-mode preview shows stale data and the Image preview renders broken.
+  useEffect(() => {
+    setDraft(el.content);
+    try {
+      const parsed = JSON.parse(el.content) as { href?: string; label?: string };
+      setUrlHref(parsed.href ?? el.content);
+      setUrlLabel(parsed.label ?? '');
+    } catch {
+      setUrlHref(el.content);
+      setUrlLabel('');
+    }
+    setComment(parseUserComment(el.content));
+  }, [el.id, el.type, el.content]);
+
   async function save() {
     let content = draft;
     if (el.type === 'url') content = JSON.stringify({ href: urlHref, label: urlLabel || urlHref });
@@ -431,16 +461,28 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
             <button
               onClick={onAddFrame}
               className="px-2 py-0.5 text-xs border rounded text-blue-600 hover:bg-blue-50"
-              title={el.type === 'description' ? 'Capture current video frame — replaces this description with an image (text becomes caption)' : 'Capture current video frame as a new image element'}
+              title={
+                el.type === 'description'
+                  ? 'Capture current video frame — replaces this description with an image (text becomes caption)'
+                  : el.type === 'image'
+                  ? 'Capture current video frame — replaces this image, keeps caption'
+                  : 'Capture current video frame as a new image element after this row'
+              }
             >
-              + frame
+              {el.type === 'image' ? '↻ frame' : '+ frame'}
             </button>
           )}
           <label
             className="px-2 py-0.5 text-xs border rounded text-gray-600 hover:bg-gray-100 cursor-pointer"
-            title={el.type === 'description' ? 'Upload an image — replaces this description with an image (text becomes caption)' : 'Upload an image as a new image element'}
+            title={
+              el.type === 'description'
+                ? 'Upload an image — replaces this description with an image (text becomes caption)'
+                : el.type === 'image'
+                ? 'Upload an image — replaces this image, keeps caption'
+                : 'Upload an image as a new image element after this row'
+            }
           >
-            + upload
+            {el.type === 'image' ? '↻ upload' : '+ upload'}
             <input
               type="file"
               accept="image/*"

@@ -19,6 +19,100 @@ function formatTime(seconds: number) {
   return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
 }
 
+// Frame-accurate scrubber spanning ±WINDOW_S seconds around the current time.
+// Lets the user nudge a few hundred ms at a time without the main slider's
+// whole-video resolution. Frame-step buttons assume 30fps as a default since
+// HTMLVideoElement doesn't expose actual frame rate.
+const FINE_WINDOW_S = 5;
+const ASSUMED_FPS = 30;
+const FRAME_S = 1 / ASSUMED_FPS;
+
+function FineSeek({
+  videoRef, currentTime, duration, cached, onChange,
+}: {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  currentTime: number;
+  duration: number;
+  cached: boolean;
+  onChange: (t: number) => void;
+}) {
+  // Center the window on currentTime. The slider's value is the absolute time;
+  // the window scrolls as the user drags or as the video plays.
+  const min = Math.max(0, currentTime - FINE_WINDOW_S);
+  const max = Math.min(duration || currentTime + FINE_WINDOW_S, currentTime + FINE_WINDOW_S);
+
+  function applyTime(t: number) {
+    const v = videoRef.current;
+    if (!v) return;
+    const clamped = Math.max(0, Math.min(duration || t, t));
+    v.currentTime = clamped;
+    onChange(clamped);
+  }
+
+  function nudge(deltaS: number) {
+    applyTime(currentTime + deltaS);
+  }
+
+  function onFineChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const t = Number(e.target.value);
+    onChange(t);
+    // Same caveat as the main slider: only push to <video> when blob-cached,
+    // otherwise every change fires a Range request and saturates the browser.
+    if (cached && videoRef.current) videoRef.current.currentTime = t;
+  }
+
+  function onFineRelease() {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = currentTime;
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-gray-500">
+      <span className="shrink-0">Fine:</span>
+      <button
+        onClick={() => nudge(-FRAME_S)}
+        className="px-1.5 py-0.5 border rounded hover:bg-gray-100 font-mono shrink-0"
+        title="Step back one frame (≈33ms at 30fps)"
+      >
+        ⏮ 1f
+      </button>
+      <button
+        onClick={() => nudge(-0.25)}
+        className="px-1.5 py-0.5 border rounded hover:bg-gray-100 font-mono shrink-0"
+        title="−250ms"
+      >
+        −250ms
+      </button>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={FRAME_S}
+        value={currentTime}
+        onChange={onFineChange}
+        onMouseUp={onFineRelease}
+        onTouchEnd={onFineRelease}
+        className="flex-1 accent-purple-500 cursor-pointer"
+        title={`±${FINE_WINDOW_S}s around current time, frame-accurate`}
+      />
+      <button
+        onClick={() => nudge(0.25)}
+        className="px-1.5 py-0.5 border rounded hover:bg-gray-100 font-mono shrink-0"
+        title="+250ms"
+      >
+        +250ms
+      </button>
+      <button
+        onClick={() => nudge(FRAME_S)}
+        className="px-1.5 py-0.5 border rounded hover:bg-gray-100 font-mono shrink-0"
+        title="Step forward one frame (≈33ms at 30fps)"
+      >
+        1f ⏭
+      </button>
+    </div>
+  );
+}
+
 function parseTimeInput(s: string): number | null {
   const trimmed = s.trim();
   const parts = trimmed.split(':');
@@ -418,6 +512,20 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
           className="w-full accent-blue-500 cursor-pointer h-2"
         />
       </div>
+
+      {/* Fine-seek slider — ±5s window centered on the current time, for frame
+          accuracy near a captured timestamp. Updates only the browser's
+          currentTime; the main slider above re-renders to follow. */}
+      <FineSeek
+        videoRef={videoRef}
+        currentTime={currentTime}
+        duration={duration}
+        cached={cached}
+        onChange={(t) => {
+          setCurrentTime(t);
+          onTimeUpdate?.(t);
+        }}
+      />
 
       {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">

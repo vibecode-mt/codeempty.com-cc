@@ -591,7 +591,7 @@ export default function ProjectEdit() {
       <div className="space-y-5">
         <div className="max-w-3xl">{metadataCard}</div>
         {videoSection}
-        {pid && <div className="max-w-3xl">{stepsSection}</div>}
+        {pid && stepsSection}
       </div>
 
       {/* Capture modal */}

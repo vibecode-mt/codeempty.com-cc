@@ -20,6 +20,16 @@ export default function ImageUpload({ value, onChange, captionEnabled = false }:
   const parsed = captionEnabled ? parseValue(value) : { url: value, caption: '' };
   const [url, setUrl] = useState(parsed.url);
   const [caption, setCaption] = useState(parsed.caption);
+
+  // Re-sync internal state when value changes externally (e.g., user clicks
+  // "↻ frame" / "↻ upload" while the edit panel is already open). React skips
+  // re-render when setState gets the same value, so this is safe in the
+  // user-typing case where value just echoes what we already emitted.
+  useEffect(() => {
+    const p = captionEnabled ? parseValue(value) : { url: value, caption: '' };
+    setUrl(p.url);
+    setCaption(p.caption);
+  }, [value, captionEnabled]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
