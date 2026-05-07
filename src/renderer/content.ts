@@ -41,7 +41,7 @@ export function renderContentElement(el: ContentElement): string {
         const parsed = JSON.parse(el.content) as { url?: string; caption?: string };
         if (parsed.url !== undefined) { imgUrl = parsed.url; caption = parsed.caption ?? ''; }
       } catch { /* plain URL */ }
-      return `<div class="content-el content-el-img"><img src="${escHtml(imgUrl)}" alt="" loading="lazy">${caption ? `<div class="content-el-img-caption">${caption}</div>` : ''}</div>`;
+      return `<div class="content-el content-el-img"><img src="${escHtml(imgUrl)}" alt="" loading="lazy" decoding="async">${caption ? `<div class="content-el-img-caption">${caption}</div>` : ''}</div>`;
     }
     case 'youtube': {
       const id = youtubeId(el.content);
