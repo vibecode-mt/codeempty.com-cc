@@ -51,6 +51,28 @@ export const api = {
       },
     ),
 
+  bulkTag: (
+    projectId: string,
+    opts: {
+      scope: 'steps' | 'elements';
+      tags?: string[];
+      includeUntagged?: boolean;
+      action: 'add' | 'remove';
+      applyTags: string;
+    },
+  ) =>
+    req<{ ok: boolean; updated: number }>(
+      'POST',
+      `/projects/${projectId}/bulk-tag`,
+      {
+        scope: opts.scope,
+        tags: opts.tags ?? [],
+        include_untagged: opts.includeUntagged === true,
+        action: opts.action,
+        apply_tags: opts.applyTags,
+      },
+    ),
+
   exportSrtUrl: (projectId: string, opts: { tags?: string[]; includeUntagged?: boolean; includeSteps?: boolean }) => {
     const params = new URLSearchParams();
     if (opts.tags && opts.tags.length > 0) params.set('tags', opts.tags.join(','));

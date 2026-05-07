@@ -11,6 +11,7 @@ import CaptureModal from '../components/CaptureModal';
 import CaptionImportModal from '../components/CaptionImportModal';
 import ExportSrtModal from '../components/ExportSrtModal';
 import BulkDeleteModal from '../components/BulkDeleteModal';
+import BulkTagModal from '../components/BulkTagModal';
 import TagsEditor from '../components/TagsEditor';
 
 function formatTimestamp(ms: number) {
@@ -59,6 +60,7 @@ export default function ProjectEdit() {
   const [showCaptionImport, setShowCaptionImport] = useState(false);
   const [showExportSrt, setShowExportSrt] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [showBulkTag, setShowBulkTag] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -511,6 +513,14 @@ export default function ProjectEdit() {
             📤 Export SRT
           </button>
           <button
+            onClick={() => setShowBulkTag(true)}
+            disabled={steps.length === 0}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Bulk add or remove tags on steps/elements"
+          >
+            🏷 Bulk tag
+          </button>
+          <button
             onClick={() => setShowBulkDelete(true)}
             disabled={steps.length === 0}
             className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -646,6 +656,26 @@ export default function ProjectEdit() {
           onClose={() => setShowBulkDelete(false)}
           onDeleted={async () => {
             // Refresh steps + content after a deletion
+            const updated = await api.getProject(pid);
+            setSteps(updated.steps);
+            const map: Record<string, ContentElement[]> = {};
+            for (const step of updated.steps) {
+              map[step.id] = await api.listContent('project_step', step.id);
+            }
+            setStepContent(map);
+          }}
+        />
+      )}
+
+      {/* Bulk tag modal */}
+      {pid && (
+        <BulkTagModal
+          projectId={pid}
+          steps={steps}
+          stepContent={stepContent}
+          isOpen={showBulkTag}
+          onClose={() => setShowBulkTag(false)}
+          onApplied={async () => {
             const updated = await api.getProject(pid);
             setSteps(updated.steps);
             const map: Record<string, ContentElement[]> = {};

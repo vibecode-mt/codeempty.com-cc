@@ -633,3 +633,113 @@ projectRoutes.post('/:id/bulk-delete', requireSession, async (c) => {
 
   return c.json({ ok: true, steps_deleted: stepsDeleted, elements_deleted: elementsDeleted });
 });
+
+// Bulk add or remove tags. Same scope+filter shape as bulk-delete; an additional
+// "action" picks add vs remove and "apply_tags" is the tag list to mutate with.
+// Used by the admin "Bulk tag" modal so an editor can stamp e.g. "step:major"
+// onto every step matching some existing-tag filter without clicking each row.
+projectRoutes.post('/:id/bulk-tag', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
+    .bind(projectId)
+    .first<Project>();
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const body = await c.req.json<{
+    scope: 'steps' | 'elements';
+    tags?: string[];
+    include_untagged?: boolean;
+    action: 'add' | 'remove';
+    apply_tags: string;
+  }>();
+
+  if (body.scope !== 'steps' && body.scope !== 'elements') {
+    return c.json({ error: 'scope must be "steps" or "elements"' }, 400);
+  }
+  if (body.action !== 'add' && body.action !== 'remove') {
+    return c.json({ error: 'action must be "add" or "remove"' }, 400);
+  }
+
+  const applyList = (body.apply_tags ?? '')
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  if (applyList.length === 0) {
+    return c.json({ error: 'apply_tags must include at least one tag' }, 400);
+  }
+
+  const filterTags = (body.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const includeUntagged = body.include_untagged === true;
+
+  const matchesTagFilter = (rowTags: string | null) => {
+    const itemTags = parseTags(rowTags);
+    if (itemTags.length === 0) return includeUntagged || filterTags.length === 0;
+    if (filterTags.length === 0) return true;
+    return itemTags.some((t) => filterTags.includes(t.toLowerCase()));
+  };
+
+  const mutate = (existing: string | null): string | null => {
+    const set = new Set(parseTags(existing).map((t) => t.toLowerCase()));
+    if (body.action === 'add') {
+      for (const t of applyList) set.add(t);
+    } else {
+      for (const t of applyList) set.delete(t);
+    }
+    return set.size === 0 ? null : Array.from(set).join(',');
+  };
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  let updated = 0;
+
+  if (body.scope === 'steps') {
+    const rows = await c.env.DB.prepare(
+      'SELECT id, tags FROM project_steps WHERE project_id = ?',
+    )
+      .bind(projectId)
+      .all<{ id: string; tags: string | null }>();
+
+    for (const r of rows.results) {
+      if (!matchesTagFilter(r.tags)) continue;
+      const next = mutate(r.tags);
+      if (next === r.tags) continue;
+      stmts.push(
+        c.env.DB.prepare('UPDATE project_steps SET tags=?, updated_at=? WHERE id=?').bind(next, ts, r.id),
+      );
+      updated++;
+    }
+  } else {
+    const stepRows = await c.env.DB.prepare(
+      'SELECT id FROM project_steps WHERE project_id = ?',
+    )
+      .bind(projectId)
+      .all<{ id: string }>();
+    const stepIds = stepRows.results.map((r) => r.id);
+    if (stepIds.length > 0) {
+      const placeholders = stepIds.map(() => '?').join(',');
+      const els = await c.env.DB
+        .prepare(
+          `SELECT id, tags FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders})`,
+        )
+        .bind(...stepIds)
+        .all<{ id: string; tags: string | null }>();
+
+      for (const r of els.results) {
+        if (!matchesTagFilter(r.tags)) continue;
+        const next = mutate(r.tags);
+        if (next === r.tags) continue;
+        stmts.push(
+          c.env.DB.prepare('UPDATE content_elements SET tags=?, updated_at=? WHERE id=?').bind(next, ts, r.id),
+        );
+        updated++;
+      }
+    }
+  }
+
+  if (stmts.length > 0) {
+    await c.env.DB.batch(stmts);
+    await invalidateProjectCache(c.env, project.slug);
+  }
+
+  return c.json({ ok: true, updated });
+});
