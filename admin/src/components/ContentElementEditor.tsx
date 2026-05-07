@@ -51,17 +51,20 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     onChange(elements.map((e) => (e.id === elId ? updated : e)));
   }
 
-  // Drag handlers
-  function onDragStart(index: number) {
+  // Drag handlers — stopPropagation prevents bubbling into a parent step div's drag handlers
+  function onDragStart(e: React.DragEvent, index: number) {
+    e.stopPropagation();
     dragIndex.current = index;
   }
 
   function onDragOver(e: React.DragEvent, index: number) {
+    e.stopPropagation();
     e.preventDefault();
     setDragOver(index);
   }
 
   async function onDrop(e: React.DragEvent, toIndex: number) {
+    e.stopPropagation();
     e.preventDefault();
     const fromIndex = dragIndex.current;
     if (fromIndex === null || fromIndex === toIndex) {
@@ -85,9 +88,9 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
         <div
           key={el.id}
           draggable
-          onDragStart={() => onDragStart(i)}
+          onDragStart={(e) => onDragStart(e, i)}
           onDragOver={(e) => onDragOver(e, i)}
-          onDragLeave={() => setDragOver(null)}
+          onDragLeave={(e) => { e.stopPropagation(); setDragOver(null); }}
           onDrop={(e) => onDrop(e, i)}
           className={`border rounded-lg bg-white overflow-hidden transition-all ${dragOver === i && dragIndex.current !== i ? 'border-blue-400 shadow-md' : ''}`}
         >

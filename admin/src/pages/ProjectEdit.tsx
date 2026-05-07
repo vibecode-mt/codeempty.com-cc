@@ -8,6 +8,7 @@ import VideoUpload from '../components/VideoUpload';
 import VideoEditor from '../components/VideoEditor';
 import VideoTimeline from '../components/VideoTimeline';
 import CaptureModal from '../components/CaptureModal';
+import CaptionImportModal from '../components/CaptionImportModal';
 
 function formatTimestamp(ms: number) {
   const total = ms / 1000;
@@ -40,9 +41,18 @@ export default function ProjectEdit() {
   const videoSeekRef = useRef<((seconds: number) => void) | null>(null);
   const [captureData, setCaptureData] = useState<{ url: string; timestampMs: number } | null>(null);
 
+  // Layout state
+  const [metaOpen, setMetaOpen] = useState(isNew);
+  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
+  const [filteredStepId, setFilteredStepId] = useState<string | null>(null);
+  const [stepSearch, setStepSearch] = useState('');
+
   // Drag state for steps
   const dragStep = useRef<number | null>(null);
   const [dragOverStep, setDragOverStep] = useState<number | null>(null);
+
+  // Caption import state
+  const [showCaptionImport, setShowCaptionImport] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -63,6 +73,24 @@ export default function ProjectEdit() {
       }
     });
   }, [steps]);
+
+  function toggleStep(stepId: string) {
+    setExpandedStepIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(stepId)) next.delete(stepId);
+      else next.add(stepId);
+      return next;
+    });
+  }
+
+  function onFilterStep(stepId: string) {
+    setFilteredStepId((prev) => {
+      if (prev === stepId) return null; // toggle off
+      setExpandedStepIds((s) => new Set([...s, stepId]));
+      setStepSearch('');
+      return stepId;
+    });
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -98,7 +126,6 @@ export default function ProjectEdit() {
   }, []);
 
   function onCaptureSaved(step: ProjectStep, element: ContentElement) {
-    // Re-fetch all steps since backend re-sorted sort_orders for all steps after timestamp insertion
     const pid = projectId ?? id;
     if (pid) {
       api.listSteps(pid).then(setSteps);
@@ -107,6 +134,7 @@ export default function ProjectEdit() {
       ...prev,
       [step.id]: [...(prev[step.id] ?? []), element],
     }));
+    setExpandedStepIds((prev) => new Set([...prev, step.id]));
     setCaptureData(null);
   }
 
@@ -116,6 +144,7 @@ export default function ProjectEdit() {
     try {
       const step = await api.createStep(projectId, { title: newStepTitle });
       setSteps((s) => [...s, step]);
+      setExpandedStepIds((prev) => new Set([...prev, step.id]));
       setNewStepTitle('');
     } catch (e) {
       setStepError(String(e));
@@ -126,10 +155,38 @@ export default function ProjectEdit() {
     if (!confirm('Delete this step and all its content?')) return;
     await api.deleteStep(stepId);
     setSteps((s) => s.filter((x) => x.id !== stepId));
+    if (filteredStepId === stepId) setFilteredStepId(null);
+  }
+
+  async function handleCaptionImport(captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>) {
+    if (!projectId) {
+      throw new Error('Project not found');
+    }
+
+    try {
+      const result = await api.importCaptions(projectId, captions);
+      // Refresh steps after import
+      const updated = await api.getProject(projectId);
+      setSteps(updated.steps);
+      // Expand first newly imported step
+      if (updated.steps.length > 0) {
+        setExpandedStepIds((prev) => new Set([...prev, updated.steps[0].id]));
+      }
+      // Reload content for all steps
+      for (const step of updated.steps) {
+        const content = await api.listContent('project_step', step.id);
+        setStepContent((prev) => ({ ...prev, [step.id]: content }));
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      throw e;
+    }
   }
 
   // Drag-and-drop handlers for steps
-  function onStepDragStart(index: number) {
+  function onStepDragStart(e: React.DragEvent, index: number) {
+    e.stopPropagation();
     dragStep.current = index;
   }
 
@@ -158,132 +215,155 @@ export default function ProjectEdit() {
 
   const pid = projectId ?? id;
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 max-w-3xl">
-        <Link to="/projects" className="text-gray-400 hover:text-gray-700">← Projects</Link>
-        <h1 className="text-2xl font-bold">{isNew ? 'New Project' : 'Edit Project'}</h1>
+  const visibleSteps = steps.filter((s) => {
+    if (filteredStepId && s.id !== filteredStepId) return false;
+    if (stepSearch.trim() && !s.title.toLowerCase().includes(stepSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  // ── Video section JSX ──────────────────────────────────────────────────────
+  const videoSection = (
+    <div className="bg-white border rounded-xl p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">
+          Video <span className="text-sm font-normal text-gray-400">— build steps from video frames</span>
+        </h2>
+        {videoKey && !replacingVideo && pid && (
+          <button
+            onClick={() => setReplacingVideo(true)}
+            className="text-xs text-blue-600 hover:underline shrink-0"
+          >
+            Replace Video
+          </button>
+        )}
       </div>
 
-      {/* Project metadata form */}
-      <div className="bg-white border rounded-xl p-6 space-y-4 max-w-3xl">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Title *</label>
-            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Slug <span className="text-gray-400 font-normal">(auto-generated if blank)</span></label>
-            <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="my-project" />
-          </div>
+      {!pid ? (
+        <div className="border-2 border-dashed rounded-xl p-6 text-center text-gray-400">
+          <div className="text-3xl mb-2">🎬</div>
+          <p className="text-sm">Save the project above to enable video upload.</p>
+          <p className="text-xs mt-1">You'll then be able to upload a video, pause at any point, capture a frame, and create steps from it.</p>
         </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Description / Overview</label>
-          <HtmlEditor
-            value={form.description}
-            onChange={(v) => setForm((f) => ({ ...f, description: v }))}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Cover Image</label>
-          <ImageUpload value={form.image_url} onChange={(url) => setForm((f) => ({ ...f, image_url: url }))} />
-        </div>
-        <div className="flex items-center gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Sort order</label>
-            <input type="number" className="w-20 border rounded-lg px-3 py-2 text-sm" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: Number(e.target.value) }))} />
-          </div>
-          <div className="flex items-center gap-2 mt-5">
-            <input type="checkbox" id="pub" checked={!!form.published} onChange={(e) => setForm((f) => ({ ...f, published: e.target.checked ? 1 : 0 }))} />
-            <label htmlFor="pub" className="text-sm font-medium">Published</label>
-          </div>
-        </div>
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-        <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
-          {saving ? 'Saving…' : saved ? '✓ Saved' : isNew ? 'Create Project' : 'Save Changes'}
-        </button>
-      </div>
-
-      {/* Video section — always visible; upload enabled after first save */}
-      <div className="bg-white border rounded-xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Video <span className="text-sm font-normal text-gray-400">— build steps from video frames</span></h2>
-          {videoKey && !replacingVideo && pid && (
-            <button
-              onClick={() => setReplacingVideo(true)}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              Replace Video
+      ) : !videoKey || replacingVideo ? (
+        <>
+          {replacingVideo && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Uploading a new video keeps your existing steps and elements. Use the Time-Shift tool after uploading to adjust timestamps if the video was edited.
+            </p>
+          )}
+          <VideoUpload onUpload={onVideoUploaded} onError={(msg) => setError(msg)} />
+          {replacingVideo && (
+            <button onClick={() => setReplacingVideo(false)} className="text-xs text-gray-500 hover:underline">
+              Cancel replace
             </button>
           )}
+        </>
+      ) : (
+        <div className="space-y-4">
+          <VideoEditor
+            videoKey={videoKey}
+            onCapture={handleCapture}
+            onTimeUpdate={setVideoCurrentTime}
+            onDurationChange={setVideoDuration}
+            seekRef={videoSeekRef}
+          />
+          <VideoTimeline
+            projectId={pid}
+            steps={steps}
+            duration={videoDuration}
+            currentTime={videoCurrentTime}
+            onSeek={(s) => videoSeekRef.current?.(s)}
+            onStepsChanged={setSteps}
+            onFilterStep={onFilterStep}
+            filteredStepId={filteredStepId}
+          />
         </div>
+      )}
+    </div>
+  );
 
-        {!pid ? (
-          <div className="border-2 border-dashed rounded-xl p-6 text-center text-gray-400">
-            <div className="text-3xl mb-2">🎬</div>
-            <p className="text-sm">Save the project above to enable video upload.</p>
-            <p className="text-xs mt-1">You'll then be able to upload a video, pause at any point, capture a frame, and create steps from it.</p>
-          </div>
-        ) : !videoKey || replacingVideo ? (
-            <>
-              {replacingVideo && (
-                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  Uploading a new video keeps your existing steps and elements. Use the Time-Shift tool after uploading to adjust timestamps if the video was edited.
-                </p>
-              )}
-              <VideoUpload onUpload={onVideoUploaded} onError={(msg) => setError(msg)} />
-              {replacingVideo && (
-                <button onClick={() => setReplacingVideo(false)} className="text-xs text-gray-500 hover:underline">
-                  Cancel replace
-                </button>
-              )}
-            </>
-          ) : (
-            <div className="space-y-4">
-              <VideoEditor
-                videoKey={videoKey}
-                onCapture={handleCapture}
-                onTimeUpdate={setVideoCurrentTime}
-                onDurationChange={setVideoDuration}
-                seekRef={videoSeekRef}
-              />
-              <VideoTimeline
-                projectId={pid}
-                steps={steps}
-                duration={videoDuration}
-                currentTime={videoCurrentTime}
-                onSeek={(s) => videoSeekRef.current?.(s)}
-                onStepsChanged={setSteps}
-              />
-            </div>
+  // ── Steps section JSX ──────────────────────────────────────────────────────
+  const stepsSection = pid ? (
+    <div className="space-y-3">
+      {/* Steps header + search + filter status */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-base font-semibold">
+            Steps <span className="text-sm font-normal text-gray-400">— drag ⠿ to reorder</span>
+          </h2>
+          {filteredStepId && (
+            <button
+              onClick={() => setFilteredStepId(null)}
+              className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full hover:bg-orange-200 flex items-center gap-1"
+            >
+              {steps.find(s => s.id === filteredStepId)?.title ?? 'Filtered'}
+              <span className="font-bold">×</span>
+            </button>
+          )}
+          {steps.length > 3 && !filteredStepId && (
+            <input
+              className="ml-auto border rounded-lg px-2 py-1 text-xs w-44"
+              placeholder="Search steps…"
+              value={stepSearch}
+              onChange={(e) => setStepSearch(e.target.value)}
+            />
+          )}
+          {stepSearch && (
+            <button onClick={() => setStepSearch('')} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
           )}
         </div>
+        {visibleSteps.length === 0 && (steps.length > 0) && (
+          <p className="text-sm text-gray-400">No steps match your search.</p>
+        )}
+      </div>
 
-      {/* Steps */}
-      {pid && (
-        <div className="space-y-3 max-w-3xl">
-          <h2 className="text-lg font-semibold">Steps <span className="text-sm font-normal text-gray-400">— drag to reorder</span></h2>
-
-          {steps.map((step, i) => (
+      {visibleSteps.map((step, i) => {
+        const realIndex = steps.indexOf(step);
+        const isExpanded = expandedStepIds.has(step.id);
+        const elementCount = stepContent[step.id]?.length;
+        return (
+          <div
+            key={step.id}
+            draggable
+            onDragStart={(e) => onStepDragStart(e, realIndex)}
+            onDragOver={(e) => onStepDragOver(e, realIndex)}
+            onDragLeave={() => setDragOverStep(null)}
+            onDrop={(e) => onStepDrop(e, realIndex)}
+            className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === realIndex && dragStep.current !== realIndex ? 'border-blue-400 shadow-md' : ''}`}
+          >
+            {/* Step header — click to expand/collapse */}
             <div
-              key={step.id}
-              draggable
-              onDragStart={() => onStepDragStart(i)}
-              onDragOver={(e) => onStepDragOver(e, i)}
-              onDragLeave={() => setDragOverStep(null)}
-              onDrop={(e) => onStepDrop(e, i)}
-              className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === i && dragStep.current !== i ? 'border-blue-400 shadow-md' : ''}`}
+              className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 border-b select-none hover:bg-gray-100 transition-colors cursor-pointer"
+              onClick={() => toggleStep(step.id)}
             >
-              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b cursor-grab active:cursor-grabbing">
-                <span className="text-gray-300 mr-1 select-none" title="Drag to reorder">⠿</span>
-                <span className="font-medium text-sm flex-1">{step.title}</span>
-                {step.video_timestamp_ms != null && (
-                  <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
-                    ⏱ {formatTimestamp(step.video_timestamp_ms)}
-                  </span>
-                )}
-                <button onClick={() => deleteStep(step.id)} className="text-xs text-red-500 px-2 border rounded hover:bg-red-50">Delete</button>
-              </div>
+              <span
+                className="text-gray-300 mr-1 cursor-grab active:cursor-grabbing select-none"
+                title="Drag to reorder"
+                onClick={(e) => e.stopPropagation()}
+              >
+                ⠿
+              </span>
+              <span className="font-medium text-sm flex-1 truncate">{step.title}</span>
+              {elementCount != null && (
+                <span className="text-xs text-gray-400 shrink-0 hidden sm:block">
+                  {elementCount} {elementCount === 1 ? 'element' : 'elements'}
+                </span>
+              )}
+              {step.video_timestamp_ms != null && (
+                <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
+                  ⏱ {formatTimestamp(step.video_timestamp_ms)}
+                </span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteStep(step.id); }}
+                className="text-xs text-red-500 px-2 py-0.5 border rounded hover:bg-red-50 shrink-0"
+              >
+                Delete
+              </button>
+              <span className="text-gray-400 text-xs shrink-0">{isExpanded ? '▲' : '▼'}</span>
+            </div>
+
+            {isExpanded && (
               <div className="p-4">
                 <ContentElementEditor
                   parentType="project_step"
@@ -292,30 +372,119 @@ export default function ProjectEdit() {
                   onChange={(els) => setStepContent((prev) => ({ ...prev, [step.id]: els }))}
                 />
               </div>
-            </div>
-          ))}
-
-          <div className="space-y-1">
-            <div className="flex gap-2">
-              <input
-                className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                placeholder="New step title — press Enter or click Add step"
-                value={newStepTitle}
-                onChange={(e) => setNewStepTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addStep()}
-              />
-              <button
-                onClick={addStep}
-                disabled={!newStepTitle.trim()}
-                className="px-4 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-40"
-              >
-                Add step
-              </button>
-            </div>
-            {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
+            )}
           </div>
+        );
+      })}
+
+      <div className="space-y-1">
+        <div className="flex gap-2">
+          <input
+            className="flex-1 border rounded-lg px-3 py-2 text-sm"
+            placeholder="New step title — press Enter or click Add step"
+            value={newStepTitle}
+            onChange={(e) => setNewStepTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addStep()}
+          />
+          <button
+            onClick={addStep}
+            disabled={!newStepTitle.trim()}
+            className="px-4 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-40 shrink-0"
+          >
+            Add step
+          </button>
+          <button
+            onClick={() => setShowCaptionImport(true)}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 shrink-0"
+            title="Import captions from CapCut JSON or SRT files"
+          >
+            📥 Import
+          </button>
+        </div>
+        {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
+      </div>
+    </div>
+  ) : null;
+
+  // ── Metadata card JSX ──────────────────────────────────────────────────────
+  const metadataCard = (
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <button
+        type="button"
+        className={`w-full flex items-center justify-between px-5 py-3.5 text-left transition-colors ${!isNew ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'}`}
+        onClick={() => { if (!isNew) setMetaOpen((o) => !o); }}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {metaOpen || isNew ? (
+            <h2 className="text-base font-semibold">{isNew ? 'Project Details' : 'Edit Details'}</h2>
+          ) : (
+            <>
+              <span className="font-semibold text-sm truncate">{form.title || 'Untitled'}</span>
+              <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${form.published ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {form.published ? 'Published' : 'Draft'}
+              </span>
+              {form.slug && <span className="text-xs text-gray-400 font-mono truncate hidden sm:block">/{form.slug}</span>}
+            </>
+          )}
+        </div>
+        {!isNew && <span className="text-xs text-gray-400 shrink-0 ml-3">{metaOpen ? '▲' : '▼ Edit'}</span>}
+      </button>
+
+      {metaOpen && (
+        <div className="px-5 pb-5 border-t pt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Title *</label>
+              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Slug <span className="text-gray-400 font-normal">(auto-generated if blank)</span></label>
+              <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="my-project" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Description / Overview</label>
+            <HtmlEditor
+              value={form.description}
+              onChange={(v) => setForm((f) => ({ ...f, description: v }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Cover Image</label>
+            <ImageUpload value={form.image_url} onChange={(url) => setForm((f) => ({ ...f, image_url: url }))} />
+          </div>
+          <div className="flex items-center gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Sort order</label>
+              <input type="number" className="w-20 border rounded-lg px-3 py-2 text-sm" value={form.sort_order} onChange={(e) => setForm((f) => ({ ...f, sort_order: Number(e.target.value) }))} />
+            </div>
+            <div className="flex items-center gap-2 mt-5">
+              <input type="checkbox" id="pub" checked={!!form.published} onChange={(e) => setForm((f) => ({ ...f, published: e.target.checked ? 1 : 0 }))} />
+              <label htmlFor="pub" className="text-sm font-medium">Published</label>
+            </div>
+          </div>
+          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+            {saving ? 'Saving…' : saved ? '✓ Saved' : isNew ? 'Create Project' : 'Save Changes'}
+          </button>
         </div>
       )}
+    </div>
+  );
+
+  // ── Page layout ────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Link to="/projects" className="text-gray-400 hover:text-gray-700 shrink-0">← Projects</Link>
+        <h1 className="text-xl font-bold truncate">{isNew ? 'New Project' : form.title || 'Edit Project'}</h1>
+      </div>
+
+      <div className="space-y-5">
+        <div className="max-w-3xl">{metadataCard}</div>
+        {videoSection}
+        {pid && <div className="max-w-3xl">{stepsSection}</div>}
+      </div>
 
       {/* Capture modal */}
       {captureData && pid && (
@@ -326,6 +495,15 @@ export default function ProjectEdit() {
           existingSteps={steps}
           onSaved={onCaptureSaved}
           onClose={() => setCaptureData(null)}
+        />
+      )}
+
+      {/* Caption import modal */}
+      {pid && (
+        <CaptionImportModal
+          isOpen={showCaptionImport}
+          onClose={() => setShowCaptionImport(false)}
+          onImport={handleCaptionImport}
         />
       )}
     </div>

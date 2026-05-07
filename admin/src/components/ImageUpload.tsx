@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import HtmlEditor from './HtmlEditor';
 
 interface Props {
   value: string;
@@ -106,14 +107,8 @@ export default function ImageUpload({ value, onChange, captionEnabled = false }:
       )}
       {captionEnabled && (
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Caption / description (HTML, optional)</label>
-          <textarea
-            className="w-full border rounded px-3 py-1.5 text-sm resize-y"
-            rows={2}
-            placeholder="<p>Describe this image…</p>"
-            value={caption}
-            onChange={(e) => handleCaptionChange(e.target.value)}
-          />
+          <label className="block text-xs text-gray-500 mb-1">Caption (optional)</label>
+          <HtmlEditor value={caption} onChange={handleCaptionChange} />
         </div>
       )}
     </div>

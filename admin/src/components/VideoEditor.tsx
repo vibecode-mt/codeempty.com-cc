@@ -48,6 +48,8 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
   const [timeInput, setTimeInput] = useState('');
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [hoverX, setHoverX] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const speedRef = useRef(1);
 
   // Blob URL caching for instant seeking
   const [videoSrc, setVideoSrc] = useState(`/api/media/${videoKey}`);
@@ -57,6 +59,7 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
   const [cacheError, setCacheError] = useState('');
   const blobUrlRef = useRef<string | null>(null);
   const pendingRestoreRef = useRef<number | null>(null);
+  const wasPlayingBeforeSrcChangeRef = useRef(false);
 
   // Revoke blob URL when component unmounts
   useEffect(() => {
@@ -65,15 +68,21 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     };
   }, []);
 
-  // After src changes to a blob URL, restore the playback position
+  // After src changes to a blob URL, wait for canplay then restore position + speed + resume
   useEffect(() => {
     const v = videoRef.current;
     if (!v || pendingRestoreRef.current === null) return;
     const t = pendingRestoreRef.current;
+    const resume = wasPlayingBeforeSrcChangeRef.current;
     pendingRestoreRef.current = null;
-    function restore() { v.currentTime = t; }
-    v.addEventListener('loadedmetadata', restore, { once: true });
-    return () => v.removeEventListener('loadedmetadata', restore);
+    wasPlayingBeforeSrcChangeRef.current = false;
+    function onReady() {
+      v.currentTime = t;
+      v.playbackRate = speedRef.current;
+      if (resume) v.play().catch(() => {});
+    }
+    v.addEventListener('canplay', onReady, { once: true });
+    return () => v.removeEventListener('canplay', onReady);
   }, [videoSrc]);
 
   async function cacheVideo() {
@@ -114,7 +123,14 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
       blobUrlRef.current = url;
 
-      // Save position to restore after src switch
+      // Clean up any stale seek handlers so they don't interfere after src switch
+      if (finishSeekRef.current) {
+        window.removeEventListener('mouseup', finishSeekRef.current);
+        window.removeEventListener('touchend', finishSeekRef.current);
+        finishSeekRef.current = null;
+      }
+      seekingRef.current = false;
+      wasPlayingBeforeSrcChangeRef.current = videoRef.current != null && !videoRef.current.paused;
       pendingRestoreRef.current = videoRef.current?.currentTime ?? 0;
       setVideoSrc(url);
       setCached(true);
@@ -233,6 +249,12 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     if (parsed !== null && videoRef.current) {
       videoRef.current.currentTime = Math.max(0, Math.min(duration, parsed));
     }
+  }
+
+  function changeSpeed(s: number) {
+    speedRef.current = s;
+    setSpeed(s);
+    if (videoRef.current) videoRef.current.playbackRate = s;
   }
 
   function toggleFullscreen() {
@@ -433,13 +455,26 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
           <JumpBtn delta={300} label="+5m" />
         </div>
 
-        <button
-          onClick={toggleFullscreen}
-          className="ml-auto px-2.5 py-1.5 text-gray-500 border rounded hover:bg-gray-100 text-sm shrink-0"
-          title="Fullscreen"
-        >
-          ⛶
-        </button>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <div className="flex items-center border rounded overflow-hidden text-xs font-mono" title="Playback speed">
+            {[0.5, 1, 1.5, 2].map((s) => (
+              <button
+                key={s}
+                onClick={() => changeSpeed(s)}
+                className={`px-2 py-1.5 leading-none transition-colors ${speed === s ? 'bg-gray-700 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              >
+                {s}×
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={toggleFullscreen}
+            className="px-2.5 py-1.5 text-gray-500 border rounded hover:bg-gray-100 text-sm"
+            title="Fullscreen"
+          >
+            ⛶
+          </button>
+        </div>
       </div>
 
       {/* Capture row */}

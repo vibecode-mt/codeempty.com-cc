@@ -18,7 +18,22 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Source\\\\Repos\\\\codeempty.com-cc\" -Recurse -Depth 2)",
+      "Bash(Select-Object -First 50)",
+      "Bash(Remove-Item -Recurse -Force \"D:\\\\Source\\\\Repos\\\\codeempty.com-cc\\\\.wrangler\\\\state\\\\v3\\\\kv\" -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"KV cache cleared\")",
+      "Read(//tmp/**)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Source\\\\Repos\\\\codeempty.com-cc\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(head *)",
+      "Bash(npx tsc *)",
+      "Bash(Start-Sleep -Seconds 5)",
+      "Bash(Invoke-WebRequest -Uri \"http://localhost:8788/api/health\" -UseBasicParsing)",
+      "Bash(Select-Object -ExpandProperty Content)",
+      "Bash(curl -s http://localhost:8788/api/health)",
+      "Bash(npx vite *)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

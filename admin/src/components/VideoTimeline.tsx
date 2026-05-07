@@ -8,6 +8,8 @@ interface Props {
   currentTime: number; // seconds
   onSeek: (seconds: number) => void;
   onStepsChanged: (steps: ProjectStep[]) => void;
+  onFilterStep?: (stepId: string) => void;
+  filteredStepId?: string | null;
 }
 
 function formatTimestamp(ms: number) {
@@ -18,7 +20,7 @@ function formatTimestamp(ms: number) {
   return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${s.padStart(5, '0')}`;
 }
 
-export default function VideoTimeline({ projectId, steps, duration, currentTime, onSeek, onStepsChanged }: Props) {
+export default function VideoTimeline({ projectId, steps, duration, currentTime, onSeek, onStepsChanged, onFilterStep, filteredStepId }: Props) {
   const barRef = useRef<HTMLDivElement>(null);
   const draggingStepId = useRef<string | null>(null);
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -47,11 +49,12 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
   function onMarkerMouseDown(e: React.MouseEvent, stepId: string) {
     e.stopPropagation();
     draggingStepId.current = stepId;
+    let didMove = false;
 
     function onMouseMove(ev: MouseEvent) {
+      didMove = true;
       const t = posFromEvent(ev);
       if (t === null) return;
-      // Optimistic update in UI
       onStepsChanged(
         steps.map((s) => (s.id === stepId ? { ...s, video_timestamp_ms: Math.round(t * 1000) } : s)),
       );
@@ -62,13 +65,21 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
       window.removeEventListener('mouseup', onMouseUp);
       const t = posFromEvent(ev);
       draggingStepId.current = null;
+      if (!didMove) {
+        const clickedStep = steps.find((s) => s.id === stepId);
+        const ms = clickedStep?.video_timestamp_ms ?? 0;
+        onSeek(ms / 1000);
+        onFilterStep?.(stepId);
+        if (ms != null) setSplitSec(String(ms / 1000));
+        return;
+      }
       if (t === null) return;
       const newMs = Math.round(t * 1000);
       try {
         const updated = await api.updateStep(stepId, { video_timestamp_ms: newMs });
         onStepsChanged(steps.map((s) => (s.id === stepId ? updated : s)));
       } catch {
-        // revert on error by refreshing — caller can reload
+        // revert on error — caller can reload
       }
     }
 
@@ -89,7 +100,6 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
     try {
       const res = await api.timeshiftProject(projectId, splitMs, offsetMs);
       setShiftResult(`Shifted ${res.shifted} step(s) and ${res.elements_shifted} element(s).`);
-      // Update local step timestamps for immediate feedback
       onStepsChanged(
         steps.map((s) => {
           if (s.video_timestamp_ms != null && s.video_timestamp_ms >= splitMs) {
@@ -134,16 +144,17 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
         {/* Step markers */}
         {stepsWithTimestamp.map((step) => {
           const pct = ((step.video_timestamp_ms! / 1000) / duration) * 100;
+          const isActive = filteredStepId === step.id;
           return (
             <div
               key={step.id}
-              className="absolute top-0 bottom-0 flex flex-col items-center cursor-grab active:cursor-grabbing"
+              className="absolute top-0 bottom-0 flex flex-col items-center cursor-pointer"
               style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
               onMouseDown={(e) => onMarkerMouseDown(e, step.id)}
-              title={`${step.title} — ${formatTimestamp(step.video_timestamp_ms!)}`}
+              title={`${step.title} — ${formatTimestamp(step.video_timestamp_ms!)} — click to filter`}
             >
-              <div className="w-3 h-3 rounded-full bg-orange-500 border-2 border-white shadow mt-1 shrink-0" />
-              <span className="text-[9px] font-medium text-orange-700 leading-none mt-0.5 whitespace-nowrap max-w-[60px] overflow-hidden text-ellipsis">
+              <div className={`w-3 h-3 rounded-full border-2 border-white shadow mt-1 shrink-0 transition-transform ${isActive ? 'bg-orange-600 scale-125' : 'bg-orange-400'}`} />
+              <span className={`text-[9px] font-medium leading-none mt-0.5 whitespace-nowrap max-w-[60px] overflow-hidden text-ellipsis ${isActive ? 'text-orange-800 font-semibold' : 'text-orange-700'}`}>
                 {step.title}
               </span>
             </div>
@@ -153,18 +164,26 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
 
       {/* Legend */}
       {stepsWithTimestamp.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {stepsWithTimestamp.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => onSeek(s.video_timestamp_ms! / 1000)}
-              className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600"
-            >
-              <span className="w-2 h-2 rounded-full bg-orange-500 inline-block shrink-0" />
-              {s.title}
-              <span className="text-gray-400 font-mono">{formatTimestamp(s.video_timestamp_ms!)}</span>
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {stepsWithTimestamp.map((s) => {
+            const isActive = filteredStepId === s.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => {
+                  onSeek(s.video_timestamp_ms! / 1000);
+                  onFilterStep?.(s.id);
+                  setSplitSec(String(s.video_timestamp_ms! / 1000));
+                }}
+                className={`flex items-center gap-1 text-xs rounded px-1 py-0.5 transition-colors ${isActive ? 'bg-orange-100 text-orange-700 font-medium' : 'text-gray-600 hover:text-blue-600'}`}
+                title="Seek to this step · click again to clear filter"
+              >
+                <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${isActive ? 'bg-orange-600' : 'bg-orange-400'}`} />
+                {s.title}
+                <span className="text-gray-400 font-mono">{formatTimestamp(s.video_timestamp_ms!)}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -176,10 +195,10 @@ export default function VideoTimeline({ projectId, steps, duration, currentTime,
       {shiftOpen && (
         <div className="border rounded-xl p-4 bg-amber-50 space-y-3">
           <p className="text-sm font-medium text-amber-800">Shift steps after a point in time</p>
-          <p className="text-xs text-amber-700">Use this when you replace the video with an edited version — shift all steps and elements that fall after the edit point forward or backward by a fixed amount.</p>
+          <p className="text-xs text-amber-700">Shifts all steps and elements at or after the split point. Click a step marker or legend entry to pre-fill the split point with that step's timestamp.</p>
           <div className="flex gap-3 items-end flex-wrap">
             <div>
-              <label className="block text-xs font-medium text-amber-800 mb-1">Split point (seconds)</label>
+              <label className="block text-xs font-medium text-amber-800 mb-1">Split point — shift steps at or after (seconds)</label>
               <input
                 type="number"
                 step="0.001"

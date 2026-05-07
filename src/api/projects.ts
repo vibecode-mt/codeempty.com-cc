@@ -281,3 +281,102 @@ async function invalidateProjectCache(env: Env, slug: string) {
     env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
   ]);
 }
+
+// Caption import endpoint
+interface ImportCaption {
+  text: string;
+  timestampMs: number;
+  type: 'step' | 'element';
+}
+
+projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
+    .bind(projectId)
+    .first<Project>();
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const body = await c.req.json<{ captions: ImportCaption[] }>();
+  if (!Array.isArray(body.captions)) {
+    return c.json({ error: 'captions must be an array' }, 400);
+  }
+
+  if (body.captions.length === 0) {
+    return c.json({ error: 'No captions provided' }, 400);
+  }
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+  const createdSteps: { id: string; sort_order: number }[] = [];
+  let currentStepId: string | null = null;
+  let stepSort = -1;
+  let elementSort = 0;
+
+  // Group captions: steps are standalone, elements follow their preceding step
+  for (const caption of body.captions) {
+    if (caption.type === 'step') {
+      const stepId = uuid();
+      stepSort++;
+      currentStepId = stepId;
+      elementSort = 0;
+
+      stmts.push(
+        c.env.DB.prepare(
+          `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, ts, ts),
+      );
+
+      createdSteps.push({ id: stepId, sort_order: stepSort });
+    } else if (caption.type === 'element') {
+      if (!currentStepId) {
+        return c.json({ error: 'First caption must be a step, not an element' }, 400);
+      }
+
+      const elementId = uuid();
+      stmts.push(
+        c.env.DB.prepare(
+          `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          elementId,
+          'project_step',
+          currentStepId,
+          'description',
+          caption.text,
+          elementSort,
+          caption.timestampMs,
+          ts,
+          ts,
+        ),
+      );
+
+      elementSort++;
+    }
+  }
+
+  // Execute all inserts
+  if (stmts.length > 0) {
+    await c.env.DB.batch(stmts);
+  }
+
+  // Re-sort all steps by timestamp
+  await resortStepsByTimestamp(c.env, projectId);
+
+  // Re-sort elements within each created step
+  for (const step of createdSteps) {
+    await resortElementsByTimestamp(c.env, step.id);
+  }
+
+  // Invalidate cache
+  await invalidateProjectCache(c.env, project.slug);
+
+  return c.json(
+    {
+      ok: true,
+      steps_created: createdSteps.length,
+      total_captions: body.captions.length,
+    },
+    201,
+  );
+});

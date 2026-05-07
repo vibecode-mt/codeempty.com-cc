@@ -143,6 +143,54 @@ The original step-by-step manual workflow is unchanged. Use the **Add step** inp
 
 ---
 
+## Importing Captions from CapCut
+
+This feature allows you to quickly import text captions from your CapCut video directly into your project as steps and content elements.
+
+### How to export captions from CapCut
+
+**Windows:**
+1. Open your CapCut project in CapCut PC.
+2. Press **Win + R** and paste this path, then press Enter:
+   ```
+   %localappdata%\CapCut\User Data\Projects\com.lveditor.draft\
+   ```
+3. A folder window opens showing project folders (long names with letters/numbers).
+4. Sort by **Date Modified** to find your most recent project folder.
+5. Open the folder and locate the file named **`draft_content.json`**.
+6. This is your CapCut project file containing all text, video data, and metadata.
+
+**Supported caption formats:**
+- **CapCut native** (`draft_content.json`) — extract auto-captions and/or manual text blocks
+- **SRT** (`.srt`) — standard subtitle format
+- **VTT** (`.vtt`) — WebVTT subtitle format
+
+### Using the import feature
+
+1. Go to `/admin` → **Projects** → edit your project.
+2. Scroll to the **Steps** section.
+3. Click the **📥 Import** button next to "Add step".
+4. **Select a file**: drag `draft_content.json` (or `.srt`/`.vtt`) onto the drop zone, or click to browse.
+   - The file is parsed in your browser (no upload to a server).
+5. **Preview captions**: a list appears showing:
+   - Each caption text
+   - Its video timestamp (HH:MM:SS.mmmm)
+6. **Mark types**: for each caption, click the **📌 Step** or **📝 Element** button to toggle:
+   - **Step** = topic/section header (creates a new project step)
+   - **Element** = detail/content within the preceding step
+   - ⚠️ The first caption must be marked as a **Step**.
+7. **Import**: click **Import** to create all steps and elements with their original video timestamps.
+   - Steps and elements are automatically sorted by timestamp.
+   - The project cache is invalidated so the public page updates immediately.
+
+### Tips
+
+- **Auto-captions only**: If your CapCut project has both auto-generated captions and manual text, exporting `draft_content.json` gives you both. You can select which ones to import.
+- **Timestamps preserved**: Every imported caption's video timestamp is stored. If you later replace the video, use the **Time-Shift** tool to adjust timestamps.
+- **Manual + import**: you can mix manual steps (created via "Add step") with imported steps. They all sort together by timestamp.
+
+---
+
 ## API Reference (OAuth)
 
 External tools (e.g. AI via MCP) access the API using OAuth 2.0 client credentials.

@@ -29,6 +29,8 @@ export const api = {
   getProject: (id: string) => req<Project & { steps: ProjectStep[] }>('GET', `/projects/${id}`),
   updateProject: (id: string, b: Partial<Project>) => req<Project>('PUT', `/projects/${id}`, b),
   deleteProject: (id: string) => req<{ ok: boolean }>('DELETE', `/projects/${id}`),
+  importCaptions: (projectId: string, captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>) =>
+    req<{ ok: boolean; steps_created: number; total_captions: number }>('POST', `/projects/${projectId}/import-captions`, { captions }),
 
   listSteps: (projectId: string) => req<ProjectStep[]>('GET', `/projects/${projectId}/steps`),
   createStep: (projectId: string, b: Partial<ProjectStep>) => req<ProjectStep>('POST', `/projects/${projectId}/steps`, b),

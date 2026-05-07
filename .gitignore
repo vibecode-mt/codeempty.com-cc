@@ -5,3 +5,9 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local notes / scratch
+*-local-command-caveatcaveat-*.txt
+ref/
+capsrt/
+test_captions.srt
