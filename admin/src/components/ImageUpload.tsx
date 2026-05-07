@@ -113,7 +113,17 @@ export default function ImageUpload({ value, onChange, captionEnabled = false }:
       </div>
       {error && <p className="text-red-500 text-sm">{error}</p>}
       {url && (
-        <img src={url} alt="preview" className="max-h-48 rounded border object-contain" />
+        <div className="space-y-1">
+          <img src={url} alt="preview" className="max-h-48 rounded border object-contain" />
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
+          >
+            ↗ View full size
+          </a>
+        </div>
       )}
       {captionEnabled && (
         <div>

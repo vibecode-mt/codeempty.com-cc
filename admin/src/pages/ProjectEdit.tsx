@@ -102,6 +102,18 @@ export default function ProjectEdit() {
     videoSeekRef.current?.(ms / 1000);
   }
 
+  // Insert a freshly created element at the top of a step's element list.
+  // The server places new elements at the end (MAX(sort_order)+1) so we follow
+  // up with a reorder call to push this one to position 0.
+  async function prependStepElement(stepId: string, newEl: ContentElement) {
+    const existing = stepContent[stepId] ?? [];
+    const next = [newEl, ...existing];
+    setStepContent((prev) => ({ ...prev, [stepId]: next }));
+    setExpandedStepIds((prev) => new Set([...prev, stepId]));
+    const orders = next.map((e, i) => ({ id: e.id, sort_order: i }));
+    await api.reorderContent(orders);
+  }
+
   // Capture current video frame and create an image element under the given step.
   async function addFrameToStep(stepId: string) {
     if (!videoCaptureRef.current) return;
@@ -112,8 +124,7 @@ export default function ProjectEdit() {
       content: JSON.stringify({ url: result.url }),
       video_timestamp_ms: result.timestampMs,
     });
-    setStepContent((prev) => ({ ...prev, [stepId]: [...(prev[stepId] ?? []), el] }));
-    setExpandedStepIds((prev) => new Set([...prev, stepId]));
+    await prependStepElement(stepId, el);
   }
 
   // Upload a chosen image file and create an image element under the given step.
@@ -123,8 +134,7 @@ export default function ProjectEdit() {
       type: 'image',
       content: JSON.stringify({ url }),
     });
-    setStepContent((prev) => ({ ...prev, [stepId]: [...(prev[stepId] ?? []), el] }));
-    setExpandedStepIds((prev) => new Set([...prev, stepId]));
+    await prependStepElement(stepId, el);
   }
 
   async function toggleStepHidden(step: ProjectStep) {
