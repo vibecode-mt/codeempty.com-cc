@@ -2,6 +2,15 @@ import { useRef, useState } from 'react';
 import { api, type ContentElement } from '../api';
 import HtmlEditor from './HtmlEditor';
 import ImageUpload from './ImageUpload';
+import TagsEditor from './TagsEditor';
+
+function formatTimestamp(ms: number) {
+  const total = ms / 1000;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = (total % 60).toFixed(1);
+  return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`;
+}
 
 interface Props {
   parentType: string;
@@ -48,6 +57,11 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
 
   async function handleUpdate(elId: string, content: string) {
     const updated = await api.updateContent(elId, { content });
+    onChange(elements.map((e) => (e.id === elId ? updated : e)));
+  }
+
+  async function handleUpdateTags(elId: string, tags: string) {
+    const updated = await api.updateContent(elId, { tags });
     onChange(elements.map((e) => (e.id === elId ? updated : e)));
   }
 
@@ -98,6 +112,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
             el={el}
             onDelete={() => handleDelete(el.id)}
             onUpdate={(c) => handleUpdate(el.id, c)}
+            onUpdateTags={(t) => handleUpdateTags(el.id, t)}
           />
         </div>
       ))}
@@ -154,10 +169,11 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate }: {
+function ElementRow({ el, onDelete, onUpdate, onUpdateTags }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
+  onUpdateTags: (tags: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -187,6 +203,12 @@ function ElementRow({ el, onDelete, onUpdate }: {
         <span className="text-gray-300 select-none" title="Drag to reorder">⠿</span>
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24 shrink-0">{el.type}</span>
         <div className="flex-1 text-sm text-gray-700 truncate">{preview}</div>
+        {el.video_timestamp_ms != null && (
+          <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
+            ⏱ {formatTimestamp(el.video_timestamp_ms)}
+          </span>
+        )}
+        <TagsEditor tags={el.tags} onChange={onUpdateTags} className="shrink-0" />
         <div className="flex items-center gap-1 ml-auto shrink-0">
           <button onClick={() => setEditing(!editing)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{editing ? 'Cancel' : 'Edit'}</button>
           <button onClick={onDelete} className="px-2 py-0.5 text-xs border rounded text-red-500 hover:bg-red-50">Delete</button>

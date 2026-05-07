@@ -29,8 +29,24 @@ export const api = {
   getProject: (id: string) => req<Project & { steps: ProjectStep[] }>('GET', `/projects/${id}`),
   updateProject: (id: string, b: Partial<Project>) => req<Project>('PUT', `/projects/${id}`, b),
   deleteProject: (id: string) => req<{ ok: boolean }>('DELETE', `/projects/${id}`),
-  importCaptions: (projectId: string, captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>) =>
-    req<{ ok: boolean; steps_created: number; total_captions: number }>('POST', `/projects/${projectId}/import-captions`, { captions }),
+  importCaptions: (
+    projectId: string,
+    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>,
+    defaultTags?: string,
+  ) =>
+    req<{ ok: boolean; steps_created: number; total_captions: number }>('POST', `/projects/${projectId}/import-captions`, {
+      captions,
+      default_tags: defaultTags,
+    }),
+
+  exportSrtUrl: (projectId: string, opts: { tags?: string[]; includeUntagged?: boolean; includeSteps?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts.tags && opts.tags.length > 0) params.set('tags', opts.tags.join(','));
+    if (opts.includeUntagged) params.set('include_untagged', '1');
+    if (opts.includeSteps === false) params.set('include_steps', '0');
+    const qs = params.toString();
+    return `/api/projects/${projectId}/export-srt${qs ? '?' + qs : ''}`;
+  },
 
   listSteps: (projectId: string) => req<ProjectStep[]>('GET', `/projects/${projectId}/steps`),
   createStep: (projectId: string, b: Partial<ProjectStep>) => req<ProjectStep>('POST', `/projects/${projectId}/steps`, b),
@@ -125,6 +141,7 @@ export interface Project {
 export interface ProjectStep {
   id: string; project_id: string; title: string; sort_order: number;
   video_timestamp_ms: number | null;
+  tags: string | null;
   created_at: string; updated_at: string;
 }
 export interface Page {
@@ -139,6 +156,7 @@ export interface ContentElement {
   id: string; parent_type: string; parent_id: string;
   type: string; content: string; sort_order: number;
   video_timestamp_ms: number | null;
+  tags: string | null;
   created_at: string; updated_at: string;
 }
 export interface CommonScript {

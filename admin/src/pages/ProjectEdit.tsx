@@ -9,6 +9,8 @@ import VideoEditor from '../components/VideoEditor';
 import VideoTimeline from '../components/VideoTimeline';
 import CaptureModal from '../components/CaptureModal';
 import CaptionImportModal from '../components/CaptionImportModal';
+import ExportSrtModal from '../components/ExportSrtModal';
+import TagsEditor from '../components/TagsEditor';
 
 function formatTimestamp(ms: number) {
   const total = ms / 1000;
@@ -51,8 +53,9 @@ export default function ProjectEdit() {
   const dragStep = useRef<number | null>(null);
   const [dragOverStep, setDragOverStep] = useState<number | null>(null);
 
-  // Caption import state
+  // Caption import + SRT export state
   const [showCaptionImport, setShowCaptionImport] = useState(false);
+  const [showExportSrt, setShowExportSrt] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -158,13 +161,16 @@ export default function ProjectEdit() {
     if (filteredStepId === stepId) setFilteredStepId(null);
   }
 
-  async function handleCaptionImport(captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>) {
+  async function handleCaptionImport(
+    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>,
+    defaultTags?: string,
+  ) {
     if (!projectId) {
       throw new Error('Project not found');
     }
 
     try {
-      const result = await api.importCaptions(projectId, captions);
+      const result = await api.importCaptions(projectId, captions, defaultTags);
       // Refresh steps after import
       const updated = await api.getProject(projectId);
       setSteps(updated.steps);
@@ -354,6 +360,14 @@ export default function ProjectEdit() {
                   ⏱ {formatTimestamp(step.video_timestamp_ms)}
                 </span>
               )}
+              <TagsEditor
+                tags={step.tags}
+                onChange={async (tags) => {
+                  const updated = await api.updateStep(step.id, { tags });
+                  setSteps((prev) => prev.map((s) => (s.id === step.id ? updated : s)));
+                }}
+                className="shrink-0"
+              />
               <button
                 onClick={(e) => { e.stopPropagation(); deleteStep(step.id); }}
                 className="text-xs text-red-500 px-2 py-0.5 border rounded hover:bg-red-50 shrink-0"
@@ -399,6 +413,14 @@ export default function ProjectEdit() {
             title="Import captions from CapCut JSON or SRT files"
           >
             📥 Import
+          </button>
+          <button
+            onClick={() => setShowExportSrt(true)}
+            disabled={steps.length === 0}
+            className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Export selected steps/elements as an SRT file for YouTube"
+          >
+            📤 Export SRT
           </button>
         </div>
         {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
@@ -504,6 +526,17 @@ export default function ProjectEdit() {
           isOpen={showCaptionImport}
           onClose={() => setShowCaptionImport(false)}
           onImport={handleCaptionImport}
+        />
+      )}
+
+      {/* SRT export modal */}
+      {pid && (
+        <ExportSrtModal
+          projectId={pid}
+          steps={steps}
+          stepContent={stepContent}
+          isOpen={showExportSrt}
+          onClose={() => setShowExportSrt(false)}
         />
       )}
     </div>

@@ -29,10 +29,10 @@ contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
     .first<{ m: number }>();
 
   await c.env.DB.prepare(
-    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, ts, ts)
+    .bind(id, parentType as ParentType, parentId, body.type, body.content ?? '', (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, normalizeTags(body.tags), ts, ts)
     .run();
 
   // If a timestamp is provided, re-sort elements within this parent so sort_order reflects timestamp order
@@ -54,13 +54,14 @@ contentRoutes.put('/:id', requireSession, async (c) => {
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
   await c.env.DB.prepare(
-    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, updated_at=? WHERE id=?',
+    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, updated_at=? WHERE id=?',
   )
     .bind(
       body.type ?? existing.type,
       body.content ?? existing.content,
       body.sort_order ?? existing.sort_order,
       'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
+      'tags' in body ? normalizeTags(body.tags) : existing.tags,
       now(),
       id,
     )
@@ -114,6 +115,17 @@ async function resortElementsByTimestamp(env: Env, parentType: ParentType, paren
     env.DB.prepare('UPDATE content_elements SET sort_order=? WHERE id=?').bind(i, s.id),
   );
   await env.DB.batch(stmts);
+}
+
+function normalizeTags(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const set = new Set<string>();
+  for (const part of input.split(',')) {
+    const t = part.trim().toLowerCase();
+    if (t) set.add(t);
+  }
+  if (set.size === 0) return null;
+  return Array.from(set).join(',');
 }
 
 async function invalidateParentCache(env: Env, parentType: ParentType, parentId: string) {

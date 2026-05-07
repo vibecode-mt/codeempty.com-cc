@@ -6,6 +6,8 @@ export interface ParsedCaption {
   text: string;
   timestampMs: number;
   type?: 'step' | 'element'; // type is optional before user marks in UI
+  groupId: string;
+  groupLabel: string;
 }
 
 /**
@@ -21,12 +23,23 @@ export function parseCapCutJson(jsonData: unknown, mode: 'subs' | 'all' = 'all')
   const texts = data.materials?.texts ?? [];
   const textById = new Map<string, any>(texts.filter((t: any) => t && t.id).map((t: any) => [t.id, t]));
 
-  const entries: Array<{ timestampMs: number; text: string }> = [];
   const tracks = data.tracks ?? [];
+
+  // Bucket captions per text track. CapCut text tracks are the natural "groups"
+  // a user sees in the editor (e.g. one for auto-subs, one for manual titles).
+  const groups: Array<{ groupId: string; groupLabel: string; entries: Array<{ timestampMs: number; text: string }>; }> = [];
+  let textTrackIdx = 0;
 
   for (const tr of tracks) {
     if (tr?.type !== 'text') continue;
-    for (const seg of tr.segments ?? []) {
+
+    const groupId = `track-${textTrackIdx}`;
+    const segs = tr.segments ?? [];
+    let subtitleCount = 0;
+    let textCount = 0;
+    const bucket: Array<{ timestampMs: number; text: string }> = [];
+
+    for (const seg of segs) {
       const mid = seg?.material_id;
       const mat = textById.get(mid);
       if (!mat) continue;
@@ -42,20 +55,44 @@ export function parseCapCutJson(jsonData: unknown, mode: 'subs' | 'all' = 'all')
       const txt = extractCapCutText(mat).replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
       if (!txt) continue;
 
-      entries.push({
+      if (mat?.type === 'subtitle') subtitleCount++;
+      else textCount++;
+
+      bucket.push({
         timestampMs: Math.round(startUs / 1000),
         text: txt,
       });
     }
+
+    if (bucket.length === 0) continue;
+
+    bucket.sort((a, b) => a.timestampMs - b.timestampMs);
+
+    const labelKind =
+      subtitleCount > 0 && textCount === 0 ? 'subtitles'
+      : subtitleCount === 0 && textCount > 0 ? 'titles'
+      : 'mixed';
+    const groupLabel = `Track ${textTrackIdx + 1} — ${bucket.length} ${labelKind}`;
+
+    groups.push({ groupId, groupLabel, entries: bucket });
+    textTrackIdx++;
   }
 
-  // Sort by timestamp
-  entries.sort((a, b) => a.timestampMs - b.timestampMs);
-
-  return entries.map((e) => ({
-    text: e.text,
-    timestampMs: e.timestampMs,
-  }));
+  // Flatten groups in order: group 1 (sorted), then group 2 (sorted), …
+  // Keeping items grouped (rather than globally time-sorted) lets the import
+  // modal render meaningful sections the user can toggle as a unit.
+  const out: ParsedCaption[] = [];
+  for (const g of groups) {
+    for (const e of g.entries) {
+      out.push({
+        text: e.text,
+        timestampMs: e.timestampMs,
+        groupId: g.groupId,
+        groupLabel: g.groupLabel,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -113,8 +150,13 @@ export function parseSRT(srtText: string): ParsedCaption[] {
     entries.push({
       text: textLines.trim(),
       timestampMs: startMs,
+      groupId: 'subtitles',
+      groupLabel: 'Subtitles',
     });
   }
+
+  // Re-label with total count once known
+  for (const e of entries) e.groupLabel = `Subtitles — ${entries.length} captions`;
 
   return entries;
 }

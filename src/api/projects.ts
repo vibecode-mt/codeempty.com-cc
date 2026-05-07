@@ -121,9 +121,9 @@ projectRoutes.post('/:projectId/steps', requireSession, async (c) => {
     .first<{ m: number }>();
 
   await c.env.DB.prepare(
-    'INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(id, projectId, body.title, (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, ts, ts)
+    .bind(id, projectId, body.title, (maxOrder?.m ?? -1) + 1, body.video_timestamp_ms ?? null, normalizeTags(body.tags), ts, ts)
     .run();
 
   // If a timestamp is provided, re-sort all steps by timestamp so sort_order reflects order
@@ -141,11 +141,12 @@ projectRoutes.put('/steps/:id', requireSession, async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM project_steps WHERE id = ?').bind(id).first<ProjectStep>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
-  await c.env.DB.prepare('UPDATE project_steps SET title=?, sort_order=?, video_timestamp_ms=?, updated_at=? WHERE id=?')
+  await c.env.DB.prepare('UPDATE project_steps SET title=?, sort_order=?, video_timestamp_ms=?, tags=?, updated_at=? WHERE id=?')
     .bind(
       body.title ?? existing.title,
       body.sort_order ?? existing.sort_order,
       'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
+      'tags' in body ? normalizeTags(body.tags) : existing.tags,
       now(),
       id,
     )
@@ -296,7 +297,7 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
     .first<Project>();
   if (!project) return c.json({ error: 'Project not found' }, 404);
 
-  const body = await c.req.json<{ captions: ImportCaption[] }>();
+  const body = await c.req.json<{ captions: ImportCaption[]; default_tags?: string }>();
   if (!Array.isArray(body.captions)) {
     return c.json({ error: 'captions must be an array' }, 400);
   }
@@ -304,6 +305,8 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
   if (body.captions.length === 0) {
     return c.json({ error: 'No captions provided' }, 400);
   }
+
+  const defaultTags = normalizeTags(body.default_tags);
 
   const ts = now();
   const stmts: D1PreparedStatement[] = [];
@@ -322,9 +325,9 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
 
       stmts.push(
         c.env.DB.prepare(
-          `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, ts, ts),
+          `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, tags, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, defaultTags, ts, ts),
       );
 
       createdSteps.push({ id: stepId, sort_order: stepSort });
@@ -336,8 +339,8 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
       const elementId = uuid();
       stmts.push(
         c.env.DB.prepare(
-          `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(
           elementId,
           'project_step',
@@ -346,6 +349,7 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
           caption.text,
           elementSort,
           caption.timestampMs,
+          defaultTags,
           ts,
           ts,
         ),
@@ -380,3 +384,147 @@ projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
     201,
   );
 });
+
+// Normalize a tag string: trim, dedupe, drop empties. Stored as comma-separated
+// for cheap LIKE-style filtering. Returns null when there are no tags.
+function normalizeTags(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const set = new Set<string>();
+  for (const part of input.split(',')) {
+    const t = part.trim().toLowerCase();
+    if (t) set.add(t);
+  }
+  if (set.size === 0) return null;
+  return Array.from(set).join(',');
+}
+
+function parseTags(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s.split(',').map((t) => t.trim()).filter(Boolean);
+}
+
+// Format ms as SRT timestamp: HH:MM:SS,mmm
+function formatSrtTimestamp(ms: number): string {
+  const total = Math.max(0, Math.floor(ms));
+  const h = Math.floor(total / 3600000);
+  const m = Math.floor((total % 3600000) / 60000);
+  const s = Math.floor((total % 60000) / 1000);
+  const millis = total % 1000;
+  return (
+    String(h).padStart(2, '0') +
+    ':' + String(m).padStart(2, '0') +
+    ':' + String(s).padStart(2, '0') +
+    ',' + String(millis).padStart(3, '0')
+  );
+}
+
+interface ExportItem {
+  text: string;
+  start: number;
+  tags: string[];
+}
+
+// Export project content as an SRT file. Filter by tags; "include_untagged" controls
+// whether items with no tags pass through. Items lacking video_timestamp_ms are skipped
+// since SRT requires timing.
+projectRoutes.get('/:id/export-srt', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
+    .bind(projectId)
+    .first<Project>();
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const tagsParam = c.req.query('tags') ?? '';
+  const includeUntagged = c.req.query('include_untagged') === '1';
+  const includeSteps = c.req.query('include_steps') !== '0'; // default on
+  const filterTags = parseTags(tagsParam.toLowerCase());
+
+  const steps = await c.env.DB.prepare(
+    'SELECT id, title, video_timestamp_ms, tags FROM project_steps WHERE project_id = ? ORDER BY sort_order ASC',
+  )
+    .bind(projectId)
+    .all<{ id: string; title: string; video_timestamp_ms: number | null; tags: string | null }>();
+
+  const items: ExportItem[] = [];
+
+  if (includeSteps) {
+    for (const s of steps.results) {
+      if (s.video_timestamp_ms == null) continue;
+      items.push({ text: s.title, start: s.video_timestamp_ms, tags: parseTags(s.tags) });
+    }
+  }
+
+  for (const s of steps.results) {
+    const els = await c.env.DB.prepare(
+      'SELECT type, content, video_timestamp_ms, tags FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+    )
+      .bind('project_step', s.id)
+      .all<{ type: string; content: string; video_timestamp_ms: number | null; tags: string | null }>();
+    for (const el of els.results) {
+      if (el.video_timestamp_ms == null) continue;
+      // Only descriptive text types translate cleanly to SRT
+      if (el.type !== 'description' && el.type !== 'title') continue;
+      items.push({
+        text: stripHtml(el.content),
+        start: el.video_timestamp_ms,
+        tags: parseTags(el.tags),
+      });
+    }
+  }
+
+  // Tag filter
+  const filtered = items.filter((item) => {
+    if (item.tags.length === 0) return includeUntagged || filterTags.length === 0;
+    if (filterTags.length === 0) return true;
+    return item.tags.some((t) => filterTags.includes(t));
+  });
+
+  filtered.sort((a, b) => a.start - b.start);
+
+  // Build SRT
+  const MAX_DUR = 6000;
+  const MIN_DUR = 1500;
+  const TAIL_DUR = 4000;
+  const lines: string[] = [];
+  for (let i = 0; i < filtered.length; i++) {
+    const cur = filtered[i];
+    const next = filtered[i + 1];
+    let end: number;
+    if (next) {
+      end = Math.min(next.start - 100, cur.start + MAX_DUR);
+      if (end < cur.start + MIN_DUR) end = cur.start + MIN_DUR;
+    } else {
+      end = cur.start + TAIL_DUR;
+    }
+    if (end <= cur.start) end = cur.start + MIN_DUR;
+    lines.push(String(i + 1));
+    lines.push(`${formatSrtTimestamp(cur.start)} --> ${formatSrtTimestamp(end)}`);
+    lines.push(cur.text.replace(/\r\n|\r/g, '\n').trim());
+    lines.push('');
+  }
+
+  const srt = lines.join('\n');
+  const filename = `${project.slug || 'project'}.srt`;
+  return new Response(srt, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/x-subrip; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'X-Item-Count': String(filtered.length),
+    },
+  });
+});
+
+function stripHtml(s: string): string {
+  return s
+    .replace(/<br\s*\/?>(?=\s*)/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
