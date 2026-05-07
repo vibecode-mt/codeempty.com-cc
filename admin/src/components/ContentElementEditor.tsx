@@ -42,16 +42,38 @@ function formatTimestamp(ms: number) {
   return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`;
 }
 
+// Lightweight preview: strip HTML/markdown to plain text, collapse whitespace,
+// truncate to a sensible length. The row's flex `truncate` does CSS-level
+// width-aware clipping on top of this — we just need the source text to be plain.
+function previewText(raw: string, maxLen = 200): string {
+  const cleaned = raw
+    .replace(/<br\s*\/?>(?=\s*)/gi, ' ')
+    .replace(/<\/p>\s*<p[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[`*_#>]/g, '')          // strip common markdown tokens
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '…' : cleaned;
+}
+
 interface Props {
   parentType: string;
   parentId: string;
   elements: ContentElement[];
   onChange: (els: ContentElement[]) => void;
+  onSeek?: (timestampMs: number) => void;
+  onCaptureFrame?: () => Promise<{ url: string; timestampMs: number } | null>;
 }
 
 const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment'];
 
-export default function ContentElementEditor({ parentType, parentId, elements, onChange }: Props) {
+export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame }: Props) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('description');
   const [newContent, setNewContent] = useState('');
@@ -114,6 +136,65 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     onChange(elements.map((e) => (e.id === elId ? updated : e)));
   }
 
+  async function handleToggleHidden(el: ContentElement) {
+    const updated = await api.updateContent(el.id, { hidden: el.hidden ? 0 : 1 });
+    onChange(elements.map((e) => (e.id === el.id ? updated : e)));
+  }
+
+  // Convert a description element into an image element. The original description
+  // text becomes the new image's caption, preserving the user's prose. Used by
+  // both the "+frame" and "+upload" buttons on description rows.
+  async function convertDescriptionToImage(
+    el: ContentElement,
+    imageUrl: string,
+    timestampMs: number | null,
+  ) {
+    const caption = previewText(el.content, 1000);
+    const content = JSON.stringify({ url: imageUrl, caption: caption || undefined });
+    const updated = await api.updateContent(el.id, {
+      type: 'image',
+      content,
+      ...(timestampMs != null ? { video_timestamp_ms: timestampMs } : {}),
+    });
+    onChange(elements.map((e) => (e.id === el.id ? updated : e)));
+  }
+
+  // Add an image element after the given element's position. Used for the
+  // "+frame"/"+upload" buttons on non-description rows.
+  async function addImageAfter(el: ContentElement, imageUrl: string, timestampMs: number | null) {
+    const newEl = await api.createContent(parentType, parentId, {
+      type: 'image',
+      content: JSON.stringify({ url: imageUrl }),
+      ...(timestampMs != null ? { video_timestamp_ms: timestampMs } : {}),
+    });
+    // Insert the new element right after `el` to preserve sequence in the editor
+    const idx = elements.findIndex((e) => e.id === el.id);
+    const next = [...elements];
+    if (idx >= 0) next.splice(idx + 1, 0, newEl);
+    else next.push(newEl);
+    onChange(next);
+  }
+
+  async function handleAddFrame(el: ContentElement) {
+    if (!onCaptureFrame) return;
+    const result = await onCaptureFrame();
+    if (!result) return;
+    if (el.type === 'description') {
+      await convertDescriptionToImage(el, result.url, result.timestampMs);
+    } else {
+      await addImageAfter(el, result.url, result.timestampMs);
+    }
+  }
+
+  async function handleAddUpload(el: ContentElement, file: File) {
+    const { url } = await api.uploadMedia(file);
+    if (el.type === 'description') {
+      await convertDescriptionToImage(el, url, null);
+    } else {
+      await addImageAfter(el, url, null);
+    }
+  }
+
   // Drag handlers — stopPropagation prevents bubbling into a parent step div's drag handlers
   function onDragStart(e: React.DragEvent, index: number) {
     e.stopPropagation();
@@ -163,6 +244,10 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
             onUpdate={(c) => handleUpdate(el.id, c)}
             onUpdateTags={(t) => handleUpdateTags(el.id, t)}
             onUpdateRenderStyle={(s) => handleUpdateRenderStyle(el.id, s)}
+            onToggleHidden={() => handleToggleHidden(el)}
+            onSeek={onSeek}
+            onAddFrame={onCaptureFrame ? () => handleAddFrame(el) : undefined}
+            onAddUpload={(f) => handleAddUpload(el, f)}
           />
         </div>
       ))}
@@ -271,12 +356,16 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle }: {
+function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle, onToggleHidden, onSeek, onAddFrame, onAddUpload }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
   onUpdateTags: (tags: string) => Promise<void>;
   onUpdateRenderStyle: (s: RenderStyle) => Promise<void>;
+  onToggleHidden: () => Promise<void>;
+  onSeek?: (timestampMs: number) => void;
+  onAddFrame?: () => Promise<void>;
+  onAddUpload: (file: File) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -297,17 +386,22 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle 
   }
 
   const preview =
-    el.type === 'description' ? (el.render_style && el.render_style !== 'default' ? `(${el.render_style})` : '(HTML)')
+    el.type === 'description' ? previewText(el.content)
     : el.type === 'url' ? urlHref
-    : el.type === 'image' ? (() => { try { return (JSON.parse(el.content) as { url?: string }).url ?? el.content; } catch { return el.content; } })()
+    : el.type === 'image' ? (() => {
+        try {
+          const parsed = JSON.parse(el.content) as { url?: string; caption?: string };
+          return parsed.caption ? `${parsed.caption}` : parsed.url ?? el.content;
+        } catch { return el.content; }
+      })()
     : el.type === 'user_comment' ? (() => { const c = parseUserComment(el.content); return c.username ? `${c.username}: ${c.text.slice(0, 80)}` : c.text.slice(0, 100); })()
-    : el.content.slice(0, 100);
+    : previewText(el.content, 200);
 
   const showRenderBadge = el.type === 'description' && el.render_style && el.render_style !== 'default';
 
   return (
     <>
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing">
+      <div className={`flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing ${el.hidden ? 'opacity-50' : ''}`}>
         <span className="text-gray-300 select-none" title="Drag to reorder">⠿</span>
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24 shrink-0">{el.type}</span>
         {showRenderBadge && (
@@ -317,12 +411,54 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle 
         )}
         <div className="flex-1 text-sm text-gray-700 truncate">{preview}</div>
         {el.video_timestamp_ms != null && (
-          <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
-            ⏱ {formatTimestamp(el.video_timestamp_ms)}
-          </span>
+          onSeek ? (
+            <button
+              onClick={() => onSeek(el.video_timestamp_ms!)}
+              className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0 hover:bg-orange-200"
+              title="Jump video to this timestamp"
+            >
+              ⏱ {formatTimestamp(el.video_timestamp_ms)}
+            </button>
+          ) : (
+            <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
+              ⏱ {formatTimestamp(el.video_timestamp_ms)}
+            </span>
+          )
         )}
         <TagsEditor tags={el.tags} onChange={onUpdateTags} className="shrink-0" />
         <div className="flex items-center gap-1 ml-auto shrink-0">
+          {onAddFrame && (
+            <button
+              onClick={onAddFrame}
+              className="px-2 py-0.5 text-xs border rounded text-blue-600 hover:bg-blue-50"
+              title={el.type === 'description' ? 'Capture current video frame — replaces this description with an image (text becomes caption)' : 'Capture current video frame as a new image element'}
+            >
+              + frame
+            </button>
+          )}
+          <label
+            className="px-2 py-0.5 text-xs border rounded text-gray-600 hover:bg-gray-100 cursor-pointer"
+            title={el.type === 'description' ? 'Upload an image — replaces this description with an image (text becomes caption)' : 'Upload an image as a new image element'}
+          >
+            + upload
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                if (f) onAddUpload(f);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+          <button
+            onClick={onToggleHidden}
+            className={`px-2 py-0.5 text-xs border rounded ${el.hidden ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'text-gray-500 hover:bg-gray-100'}`}
+            title={el.hidden ? 'Hidden — click to show' : 'Visible — click to hide on the public site'}
+          >
+            {el.hidden ? '🙈' : '👁'}
+          </button>
           <button onClick={() => setEditing(!editing)} className="px-2 py-0.5 text-xs border rounded hover:bg-gray-100">{editing ? 'Cancel' : 'Edit'}</button>
           <button onClick={onDelete} className="px-2 py-0.5 text-xs border rounded text-red-500 hover:bg-red-50">Delete</button>
         </div>

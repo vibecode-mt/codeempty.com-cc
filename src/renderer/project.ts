@@ -18,7 +18,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   const scripts = scriptsResult.results;
 
   const stepsResult = await env.DB.prepare(
-    'SELECT * FROM project_steps WHERE project_id = ? ORDER BY sort_order ASC',
+    'SELECT * FROM project_steps WHERE project_id = ? AND hidden = 0 ORDER BY sort_order ASC',
   )
     .bind(project.id)
     .all<ProjectStep>();
@@ -28,7 +28,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   const stepHtml = await Promise.all(
     steps.map(async (step) => {
       const elementsResult = await env.DB.prepare(
-        'SELECT * FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+        'SELECT * FROM content_elements WHERE parent_type = ? AND parent_id = ? AND hidden = 0 ORDER BY sort_order ASC',
       )
         .bind('project_step', step.id)
         .all<ContentElement>();

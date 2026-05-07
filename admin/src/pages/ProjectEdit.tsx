@@ -42,6 +42,7 @@ export default function ProjectEdit() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const videoSeekRef = useRef<((seconds: number) => void) | null>(null);
+  const videoCaptureRef = useRef<(() => Promise<{ url: string; timestampMs: number } | null>) | null>(null);
   const [captureData, setCaptureData] = useState<{ url: string; timestampMs: number } | null>(null);
 
   // Layout state
@@ -95,6 +96,40 @@ export default function ProjectEdit() {
       setStepSearch('');
       return stepId;
     });
+  }
+
+  function seekToMs(ms: number) {
+    videoSeekRef.current?.(ms / 1000);
+  }
+
+  // Capture current video frame and create an image element under the given step.
+  async function addFrameToStep(stepId: string) {
+    if (!videoCaptureRef.current) return;
+    const result = await videoCaptureRef.current();
+    if (!result) return;
+    const el = await api.createContent('project_step', stepId, {
+      type: 'image',
+      content: JSON.stringify({ url: result.url }),
+      video_timestamp_ms: result.timestampMs,
+    });
+    setStepContent((prev) => ({ ...prev, [stepId]: [...(prev[stepId] ?? []), el] }));
+    setExpandedStepIds((prev) => new Set([...prev, stepId]));
+  }
+
+  // Upload a chosen image file and create an image element under the given step.
+  async function addUploadToStep(stepId: string, file: File) {
+    const { url } = await api.uploadMedia(file);
+    const el = await api.createContent('project_step', stepId, {
+      type: 'image',
+      content: JSON.stringify({ url }),
+    });
+    setStepContent((prev) => ({ ...prev, [stepId]: [...(prev[stepId] ?? []), el] }));
+    setExpandedStepIds((prev) => new Set([...prev, stepId]));
+  }
+
+  async function toggleStepHidden(step: ProjectStep) {
+    const updated = await api.updateStep(step.id, { hidden: step.hidden ? 0 : 1 });
+    setSteps((prev) => prev.map((s) => (s.id === step.id ? updated : s)));
   }
 
   async function handleSave() {
@@ -273,6 +308,7 @@ export default function ProjectEdit() {
             onTimeUpdate={setVideoCurrentTime}
             onDurationChange={setVideoDuration}
             seekRef={videoSeekRef}
+            captureRef={videoCaptureRef}
           />
           <VideoTimeline
             projectId={pid}
@@ -336,7 +372,7 @@ export default function ProjectEdit() {
             onDragOver={(e) => onStepDragOver(e, realIndex)}
             onDragLeave={() => setDragOverStep(null)}
             onDrop={(e) => onStepDrop(e, realIndex)}
-            className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === realIndex && dragStep.current !== realIndex ? 'border-blue-400 shadow-md' : ''}`}
+            className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === realIndex && dragStep.current !== realIndex ? 'border-blue-400 shadow-md' : ''} ${step.hidden ? 'opacity-50' : ''}`}
           >
             {/* Step header — click to expand/collapse */}
             <div
@@ -357,9 +393,13 @@ export default function ProjectEdit() {
                 </span>
               )}
               {step.video_timestamp_ms != null && (
-                <span className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); seekToMs(step.video_timestamp_ms!); }}
+                  className="text-xs font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded shrink-0 hover:bg-orange-200 cursor-pointer"
+                  title="Jump video to this timestamp"
+                >
                   ⏱ {formatTimestamp(step.video_timestamp_ms)}
-                </span>
+                </button>
               )}
               <TagsEditor
                 tags={step.tags}
@@ -369,6 +409,41 @@ export default function ProjectEdit() {
                 }}
                 className="shrink-0"
               />
+              {videoKey && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); addFrameToStep(step.id); }}
+                  className="text-xs text-blue-600 px-2 py-0.5 border rounded hover:bg-blue-50 shrink-0"
+                  title="Capture current video frame as an image element"
+                >
+                  + frame
+                </button>
+              )}
+              <label
+                className="text-xs text-gray-600 px-2 py-0.5 border rounded hover:bg-gray-100 shrink-0 cursor-pointer"
+                title="Upload an image file as an image element"
+                onClick={(e) => e.stopPropagation()}
+              >
+                + upload
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.currentTarget.files?.[0];
+                    if (f) addUploadToStep(step.id, f);
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </label>
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleStepHidden(step); }}
+                className={`text-xs px-2 py-0.5 border rounded shrink-0 ${
+                  step.hidden ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'text-gray-500 hover:bg-gray-100'
+                }`}
+                title={step.hidden ? 'Hidden — click to show' : 'Visible — click to hide on the public site'}
+              >
+                {step.hidden ? '🙈 hidden' : '👁'}
+              </button>
               <button
                 onClick={(e) => { e.stopPropagation(); deleteStep(step.id); }}
                 className="text-xs text-red-500 px-2 py-0.5 border rounded hover:bg-red-50 shrink-0"
@@ -385,6 +460,8 @@ export default function ProjectEdit() {
                   parentId={step.id}
                   elements={stepContent[step.id] ?? []}
                   onChange={(els) => setStepContent((prev) => ({ ...prev, [step.id]: els }))}
+                  onSeek={seekToMs}
+                  onCaptureFrame={videoKey ? () => videoCaptureRef.current?.() ?? Promise.resolve(null) : undefined}
                 />
               </div>
             )}

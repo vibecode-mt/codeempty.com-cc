@@ -66,7 +66,7 @@ contentRoutes.put('/:id', requireSession, async (c) => {
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
   await c.env.DB.prepare(
-    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, render_style=?, updated_at=? WHERE id=?',
+    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, render_style=?, hidden=?, updated_at=? WHERE id=?',
   )
     .bind(
       body.type ?? existing.type,
@@ -75,6 +75,7 @@ contentRoutes.put('/:id', requireSession, async (c) => {
       'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
       'tags' in body ? normalizeTags(body.tags) : existing.tags,
       'render_style' in body ? normalizeRenderStyle(body.render_style) : existing.render_style,
+      'hidden' in body ? (body.hidden ? 1 : 0) : existing.hidden,
       now(),
       id,
     )

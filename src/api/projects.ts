@@ -141,12 +141,13 @@ projectRoutes.put('/steps/:id', requireSession, async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM project_steps WHERE id = ?').bind(id).first<ProjectStep>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
-  await c.env.DB.prepare('UPDATE project_steps SET title=?, sort_order=?, video_timestamp_ms=?, tags=?, updated_at=? WHERE id=?')
+  await c.env.DB.prepare('UPDATE project_steps SET title=?, sort_order=?, video_timestamp_ms=?, tags=?, hidden=?, updated_at=? WHERE id=?')
     .bind(
       body.title ?? existing.title,
       body.sort_order ?? existing.sort_order,
       'video_timestamp_ms' in body ? (body.video_timestamp_ms ?? null) : existing.video_timestamp_ms,
       'tags' in body ? normalizeTags(body.tags) : existing.tags,
+      'hidden' in body ? (body.hidden ? 1 : 0) : existing.hidden,
       now(),
       id,
     )
@@ -449,7 +450,7 @@ projectRoutes.get('/:id/export-srt', requireSession, async (c) => {
   const filterTags = parseTags(tagsParam.toLowerCase());
 
   const steps = await c.env.DB.prepare(
-    'SELECT id, title, video_timestamp_ms, tags FROM project_steps WHERE project_id = ? ORDER BY sort_order ASC',
+    'SELECT id, title, video_timestamp_ms, tags FROM project_steps WHERE project_id = ? AND hidden = 0 ORDER BY sort_order ASC',
   )
     .bind(projectId)
     .all<{ id: string; title: string; video_timestamp_ms: number | null; tags: string | null }>();
@@ -465,7 +466,7 @@ projectRoutes.get('/:id/export-srt', requireSession, async (c) => {
 
   for (const s of steps.results) {
     const els = await c.env.DB.prepare(
-      'SELECT type, content, video_timestamp_ms, tags FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+      'SELECT type, content, video_timestamp_ms, tags FROM content_elements WHERE parent_type = ? AND parent_id = ? AND hidden = 0 ORDER BY sort_order ASC',
     )
       .bind('project_step', s.id)
       .all<{ type: string; content: string; video_timestamp_ms: number | null; tags: string | null }>();

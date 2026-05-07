@@ -18,7 +18,7 @@ export async function renderPage(slug: string, env: Env): Promise<Response> {
   const scripts = scriptsResult.results;
 
   const elementsResult = await env.DB.prepare(
-    'SELECT * FROM content_elements WHERE parent_type = ? AND parent_id = ? ORDER BY sort_order ASC',
+    'SELECT * FROM content_elements WHERE parent_type = ? AND parent_id = ? AND hidden = 0 ORDER BY sort_order ASC',
   )
     .bind('page', page.id)
     .all<ContentElement>();

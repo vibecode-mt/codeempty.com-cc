@@ -7,6 +7,8 @@ interface Props {
   onTimeUpdate?: (currentTime: number) => void;
   onDurationChange?: (duration: number) => void;
   seekRef?: React.MutableRefObject<((seconds: number) => void) | null>;
+  // Imperative capture: returns the uploaded URL + timestamp without going through onCapture
+  captureRef?: React.MutableRefObject<(() => Promise<{ url: string; timestampMs: number } | null>) | null>;
 }
 
 function formatTime(seconds: number) {
@@ -37,7 +39,7 @@ function parseTimeInput(s: string): number | null {
   return isNaN(raw) ? null : raw;
 }
 
-export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurationChange, seekRef }: Props) {
+export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurationChange, seekRef, captureRef }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -267,9 +269,12 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
     }
   }
 
-  const captureFrame = useCallback(async () => {
+  // Captures, uploads, and returns the resulting URL/timestamp. Caller decides
+  // what to do with the result (the on-screen "Capture Frame" button forwards
+  // to onCapture; the imperative captureRef returns the result directly).
+  const doCapture = useCallback(async (): Promise<{ url: string; timestampMs: number } | null> => {
     const video = videoRef.current;
-    if (!video || capturing) return;
+    if (!video || capturing) return null;
     setCaptureError('');
     video.pause();
     const timestampMs = Math.round(video.currentTime * 1000);
@@ -286,13 +291,23 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
       );
       const file = new File([blob], `frame_${timestampMs}.png`, { type: 'image/png' });
       const { url } = await api.uploadMedia(file);
-      onCapture(url, timestampMs);
+      return { url, timestampMs };
     } catch (e) {
       setCaptureError(String(e));
+      return null;
     } finally {
       setCapturing(false);
     }
-  }, [capturing, onCapture]);
+  }, [capturing]);
+
+  const captureFrame = useCallback(async () => {
+    const result = await doCapture();
+    if (result) onCapture(result.url, result.timestampMs);
+  }, [doCapture, onCapture]);
+
+  useEffect(() => {
+    if (captureRef) captureRef.current = doCapture;
+  }, [captureRef, doCapture]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

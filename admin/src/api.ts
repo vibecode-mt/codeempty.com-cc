@@ -154,6 +154,7 @@ export interface ProjectStep {
   id: string; project_id: string; title: string; sort_order: number;
   video_timestamp_ms: number | null;
   tags: string | null;
+  hidden: number;
   created_at: string; updated_at: string;
 }
 export interface Page {
@@ -171,6 +172,7 @@ export interface ContentElement {
   video_timestamp_ms: number | null;
   tags: string | null;
   render_style: RenderStyle | null;
+  hidden: number;
   created_at: string; updated_at: string;
 }
 export interface CommonScript {
