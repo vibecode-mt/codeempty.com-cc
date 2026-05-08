@@ -51,6 +51,19 @@ export const api = {
       },
     ),
 
+  // Project versioning
+  listVersions: (projectId: string) =>
+    req<ProjectVersionSummary[]>('GET', `/projects/${projectId}/versions`),
+  createVersion: (projectId: string, label?: string) =>
+    req<{ id: string; version_num: number }>('POST', `/projects/${projectId}/versions`, label ? { label } : {}),
+  restoreVersion: (projectId: string, versionId: string) =>
+    req<{ ok: boolean; restored_version_num: number; pre_restore_version_id: string }>(
+      'POST',
+      `/projects/${projectId}/versions/${versionId}/restore`,
+    ),
+  deleteVersion: (projectId: string, versionId: string) =>
+    req<{ ok: boolean }>('DELETE', `/projects/${projectId}/versions/${versionId}`),
+
   bulkTag: (
     projectId: string,
     opts: {
@@ -206,4 +219,14 @@ export interface CommonScript {
 export interface OAuthApp {
   id: string; name: string; client_id: string; scopes: string;
   created_by: string; created_at: string;
+}
+export interface ProjectVersionSummary {
+  id: string;
+  project_id: string;
+  version_num: number;
+  label: string | null;
+  source: 'manual' | 'publish' | 'import-replace';
+  created_by: string | null;
+  created_at: string;
+  size_bytes: number;
 }

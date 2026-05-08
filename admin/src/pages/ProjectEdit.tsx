@@ -12,6 +12,7 @@ import CaptionImportModal from '../components/CaptionImportModal';
 import ExportSrtModal from '../components/ExportSrtModal';
 import BulkDeleteModal from '../components/BulkDeleteModal';
 import BulkTagModal from '../components/BulkTagModal';
+import VersionsModal from '../components/VersionsModal';
 import TagsEditor from '../components/TagsEditor';
 
 function formatTimestamp(ms: number) {
@@ -75,6 +76,7 @@ export default function ProjectEdit() {
   const [showExportSrt, setShowExportSrt] = useState(false);
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showBulkTag, setShowBulkTag] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
   // manageTagInput is the draft in the toolbar input; activation happens on the
   // Start button or Enter so the user can finish typing before the banner kicks in.
@@ -610,6 +612,13 @@ export default function ProjectEdit() {
           >
             🗑 Bulk delete
           </button>
+          <button
+            onClick={() => setShowVersions(true)}
+            className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 shrink-0"
+            title="Save and restore project snapshots"
+          >
+            🗂 Versions
+          </button>
         </div>
         {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
       </div>
@@ -773,6 +782,34 @@ export default function ProjectEdit() {
           onClose={() => setShowBulkTag(false)}
           onApplied={async () => {
             const updated = await api.getProject(pid);
+            setSteps(updated.steps);
+            const map: Record<string, ContentElement[]> = {};
+            for (const step of updated.steps) {
+              map[step.id] = await api.listContent('project_step', step.id);
+            }
+            setStepContent(map);
+          }}
+        />
+      )}
+
+      {/* Versions modal */}
+      {pid && (
+        <VersionsModal
+          projectId={pid}
+          isOpen={showVersions}
+          onClose={() => setShowVersions(false)}
+          onRestored={async () => {
+            // After a restore the project + its content has changed under us; reload.
+            const updated = await api.getProject(pid);
+            setForm({
+              title: updated.title,
+              slug: updated.slug,
+              description: updated.description,
+              image_url: updated.image_url ?? '',
+              youtube_url: updated.youtube_url ?? '',
+              sort_order: updated.sort_order,
+              published: updated.published,
+            });
             setSteps(updated.steps);
             const map: Record<string, ContentElement[]> = {};
             for (const step of updated.steps) {

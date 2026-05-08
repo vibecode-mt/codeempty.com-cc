@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import type { Env, Project, ProjectStep } from '../types';
+import type { Env, Project, ProjectStep, ContentElement, ProjectVersion } from '../types';
 import { uuid, slugify, now } from '../utils';
-import { requireSession, requireOAuthOrSession } from './middleware';
+import { requireSession, requireOAuthOrSession, requireSessionOrOAuthWithScope } from './middleware';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -743,4 +743,249 @@ projectRoutes.post('/:id/bulk-tag', requireSession, async (c) => {
   }
 
   return c.json({ ok: true, updated });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Versioning: snapshot the project (project + steps + elements) into JSON,
+// stored in project_versions. Restore reads the snapshot and applies it as one
+// atomic D1 batch (delete old children + update project row + insert new).
+// Media is referenced by R2 key, never duplicated — restoring after the
+// referenced media has been deleted leaves dangling URLs but doesn't fail.
+
+interface SnapshotShape {
+  format_version: number;
+  project: Project;
+  steps: ProjectStep[];
+  elements: ContentElement[];
+}
+
+async function buildSnapshot(env: Env, projectId: string): Promise<SnapshotShape> {
+  const project = await env.DB.prepare('SELECT * FROM projects WHERE id = ?')
+    .bind(projectId)
+    .first<Project>();
+  if (!project) throw new Error('Project not found');
+
+  const stepsResult = await env.DB.prepare(
+    'SELECT * FROM project_steps WHERE project_id = ? ORDER BY sort_order ASC',
+  )
+    .bind(projectId)
+    .all<ProjectStep>();
+  const steps = stepsResult.results;
+
+  let elements: ContentElement[] = [];
+  if (steps.length > 0) {
+    const placeholders = steps.map(() => '?').join(',');
+    const elsResult = await env.DB.prepare(
+      `SELECT * FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders}) ORDER BY parent_id, sort_order ASC`,
+    )
+      .bind(...steps.map((s) => s.id))
+      .all<ContentElement>();
+    elements = elsResult.results;
+  }
+
+  return { format_version: 1, project, steps, elements };
+}
+
+// Persists a snapshot row. Caller decides the source label.
+async function snapshotProjectToVersions(
+  env: Env,
+  projectId: string,
+  source: 'manual' | 'publish' | 'import-replace',
+  label: string | null,
+  createdBy: string | null,
+): Promise<{ id: string; version_num: number }> {
+  const snapshot = await buildSnapshot(env, projectId);
+  const lastRow = await env.DB.prepare(
+    'SELECT COALESCE(MAX(version_num), 0) as v FROM project_versions WHERE project_id = ?',
+  )
+    .bind(projectId)
+    .first<{ v: number }>();
+  const versionNum = (lastRow?.v ?? 0) + 1;
+  const id = uuid();
+  await env.DB.prepare(
+    `INSERT INTO project_versions (id, project_id, version_num, label, snapshot_json, source, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(id, projectId, versionNum, label, JSON.stringify(snapshot), source, createdBy)
+    .run();
+  return { id, version_num: versionNum };
+}
+
+// Apply a snapshot atomically. The project row keeps its id and slug; everything
+// else inside the project (steps, elements) is wiped and recreated from the
+// snapshot. Wrapped in a single c.env.DB.batch() so a failure leaves no
+// half-state.
+async function applySnapshot(
+  env: Env,
+  projectId: string,
+  snapshot: SnapshotShape,
+): Promise<void> {
+  // Existing step ids are needed so we can drop their elements first.
+  const existing = await env.DB.prepare(
+    'SELECT id FROM project_steps WHERE project_id = ?',
+  )
+    .bind(projectId)
+    .all<{ id: string }>();
+  const existingIds = existing.results.map((r) => r.id);
+
+  const ts = now();
+  const stmts: D1PreparedStatement[] = [];
+
+  if (existingIds.length > 0) {
+    const ph = existingIds.map(() => '?').join(',');
+    stmts.push(
+      env.DB
+        .prepare(`DELETE FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${ph})`)
+        .bind(...existingIds),
+    );
+  }
+  stmts.push(env.DB.prepare('DELETE FROM project_steps WHERE project_id = ?').bind(projectId));
+
+  // Update the project row in place — id and slug are preserved.
+  const p = snapshot.project;
+  stmts.push(
+    env.DB
+      .prepare(
+        `UPDATE projects SET title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+      )
+      .bind(
+        p.title,
+        p.description,
+        p.image_url,
+        p.video_key,
+        p.video_url,
+        p.youtube_url ?? null,
+        p.sort_order,
+        p.published,
+        ts,
+        projectId,
+      ),
+  );
+
+  // Insert steps with their original ids so element parent links stay valid.
+  for (const s of snapshot.steps) {
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, tags, hidden, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          s.id,
+          projectId,
+          s.title,
+          s.sort_order,
+          s.video_timestamp_ms,
+          s.tags,
+          s.hidden ?? 0,
+          s.created_at,
+          ts,
+        ),
+    );
+  }
+
+  for (const e of snapshot.elements) {
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, render_style, hidden, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          e.id,
+          e.parent_type,
+          e.parent_id,
+          e.type,
+          e.content,
+          e.sort_order,
+          e.video_timestamp_ms,
+          e.tags,
+          e.render_style,
+          e.hidden ?? 0,
+          e.created_at,
+          ts,
+        ),
+    );
+  }
+
+  await env.DB.batch(stmts);
+  await invalidateProjectCache(env, p.slug);
+}
+
+projectRoutes.post('/:id/versions', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  let body: { label?: string } = {};
+  try { body = await c.req.json(); } catch { /* empty body */ }
+  const userId = (c.get('userId' as never) as string | null) ?? null;
+  try {
+    const result = await snapshotProjectToVersions(c.env, projectId, 'manual', body.label?.trim() || null, userId);
+    return c.json(result, 201);
+  } catch (e) {
+    return c.json({ error: String(e) }, 400);
+  }
+});
+
+projectRoutes.get('/:id/versions', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const rows = await c.env.DB.prepare(
+    `SELECT id, project_id, version_num, label, source, created_by, created_at,
+            length(snapshot_json) AS size_bytes
+       FROM project_versions
+      WHERE project_id = ?
+      ORDER BY version_num DESC`,
+  )
+    .bind(projectId)
+    .all<ProjectVersion & { size_bytes: number }>();
+  return c.json(rows.results);
+});
+
+projectRoutes.post('/:id/versions/:vid/restore', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const versionId = c.req.param('vid');
+  const userId = (c.get('userId' as never) as string | null) ?? null;
+
+  const target = await c.env.DB.prepare(
+    'SELECT * FROM project_versions WHERE id = ? AND project_id = ?',
+  )
+    .bind(versionId, projectId)
+    .first<ProjectVersion>();
+  if (!target) return c.json({ error: 'Version not found' }, 404);
+
+  let snapshot: SnapshotShape;
+  try {
+    snapshot = JSON.parse(target.snapshot_json) as SnapshotShape;
+  } catch {
+    return c.json({ error: 'Snapshot is corrupt' }, 500);
+  }
+
+  // Snapshot the current state first so the user can roll the restore back.
+  const before = await snapshotProjectToVersions(
+    c.env,
+    projectId,
+    'manual',
+    `Before restore of v${target.version_num}`,
+    userId,
+  );
+
+  try {
+    await applySnapshot(c.env, projectId, snapshot);
+  } catch (e) {
+    return c.json({ error: `Restore failed: ${String(e)}`, pre_restore_version_id: before.id }, 500);
+  }
+
+  return c.json({
+    ok: true,
+    restored_version_id: versionId,
+    restored_version_num: target.version_num,
+    pre_restore_version_id: before.id,
+  });
+});
+
+projectRoutes.delete('/:id/versions/:vid', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  const versionId = c.req.param('vid');
+  await c.env.DB.prepare('DELETE FROM project_versions WHERE id = ? AND project_id = ?')
+    .bind(versionId, projectId)
+    .run();
+  return c.json({ ok: true });
 });
