@@ -126,6 +126,12 @@ img{max-width:100%;height:auto;display:block}
 .project-hero-text .project-hero-back:hover{color:#1f2937;text-decoration:underline}
 .project-hero-title-plain{font-size:clamp(1.6rem,4vw,2.25rem);font-weight:700;margin:0 0 .75rem;letter-spacing:-.01em}
 @media(max-width:640px){.project-hero{margin-left:-1.5rem;margin-right:-1.5rem}.project-hero-overlay{padding:1rem 1.25rem}}
+.project-description{margin-bottom:1.5rem;font-size:1rem;color:#374151;line-height:1.65}
+.project-description-text{overflow:hidden}
+.project-description[data-collapsed="true"] .project-description-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.project-description[data-collapsed="true"] .project-description-text{mask-image:linear-gradient(to bottom,#000 60%,rgba(0,0,0,.6) 100%);-webkit-mask-image:linear-gradient(to bottom,#000 60%,rgba(0,0,0,.6) 100%)}
+.project-description-more{margin-top:.4rem;background:transparent;border:none;color:#2563eb;padding:0;font-size:.9rem;cursor:pointer;font-family:inherit;font-weight:500}
+.project-description-more:hover{color:#1d4ed8;text-decoration:underline}
 .page-tools{display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap}
 .yt-watch-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#ff0033;color:#fff;border-radius:.4rem;font-size:.85rem;text-decoration:none;font-weight:500}
 .yt-watch-btn:hover{background:#cc0028}

@@ -236,7 +236,8 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     elementFilterTags.size > 0 ||
     showSearch ||
     slideshowImages.length > 0 ||
-    steps.length > 5;
+    steps.length > 5 ||
+    !!project.description;
 
   const inlineScript = needsScript
     ? `<script>(function(){
@@ -305,6 +306,26 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   $$('.step-summary .yt-link').forEach(function(a){
     a.addEventListener('click',function(e){e.stopPropagation();});
   });
+  // Description "more" toggle: hide the button if text fits within the clamp,
+  // otherwise expand on click.
+  var desc=$('.project-description');
+  if(desc){
+    var txt=$('.project-description-text',desc);
+    var more=$('.project-description-more',desc);
+    if(txt&&more){
+      // Measurement happens after layout; if the inner content fits the clamped
+      // height, no "more" link is needed at all.
+      if(txt.scrollHeight<=txt.clientHeight+2){more.remove();}
+      else{
+        more.addEventListener('click',function(){
+          var collapsed=desc.getAttribute('data-collapsed')!=='false';
+          desc.setAttribute('data-collapsed',collapsed?'false':'true');
+          more.setAttribute('aria-expanded',collapsed?'true':'false');
+          more.textContent=collapsed?'less ↑':'more ↓';
+        });
+      }
+    }
+  }
   var ea=$('#toc-expand-all');
   if(ea)ea.addEventListener('click',function(){$$('details.step').forEach(function(d){d.open=true;});});
   var ca=$('#toc-collapse-all');
@@ -382,22 +403,30 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 })();</script>`
     : '';
 
-  // Hero block: full-bleed cover image with title overlay; falls back to a
-  // clean text-only header when no cover image is set.
+  // Hero block: cover image with title overlay (description moved below the
+  // image to stay readable for long copy). Falls back to a text-only header
+  // when no cover image is set.
   const hero = project.image_url
     ? `<header class="project-hero project-hero-image">
         <img class="project-hero-img" src="${escHtml(project.image_url)}" alt="" decoding="async">
         <div class="project-hero-overlay">
           <a class="project-hero-back" href="/">← Projects</a>
           <h1 class="project-hero-title">${escHtml(project.title)}</h1>
-          ${project.description ? `<p class="project-hero-subtitle">${project.description}</p>` : ''}
         </div>
       </header>`
     : `<header class="project-hero project-hero-text">
         <a class="project-hero-back" href="/">← Projects</a>
         <h1 class="project-hero-title-plain">${escHtml(project.title)}</h1>
-        ${project.description ? `<p class="page-subtitle">${project.description}</p>` : ''}
       </header>`;
+
+  // Collapsible description: clamps to a few lines initially, "more" link
+  // expands. Inline JS removes the link when the text is short enough to fit.
+  const descriptionBlock = project.description
+    ? `<div class="project-description" data-collapsed="true">
+        <div class="project-description-text">${project.description}</div>
+        <button type="button" class="project-description-more" aria-expanded="false">more ↓</button>
+      </div>`
+    : '';
 
   const toolsBar = (searchBox || slideshowButton || youtubeButton)
     ? `<div class="page-tools">${searchBox}${slideshowButton}${youtubeButton}</div>`
@@ -405,6 +434,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 
   const body = `
     ${hero}
+    ${descriptionBlock}
     ${toolsBar}
     ${tocBlock}
     ${stepFilterRow}
