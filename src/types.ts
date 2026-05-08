@@ -122,3 +122,24 @@ export interface CommonScript {
   created_at: string;
   updated_at: string;
 }
+
+export interface ProjectVersion {
+  id: string;
+  project_id: string;
+  version_num: number;
+  label: string | null;
+  snapshot_json: string;
+  source: 'manual' | 'publish' | 'import-replace';
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface PublishDestination {
+  id: string;
+  name: string;
+  api_url: string;
+  client_id: string;
+  client_secret: string;
+  scopes: string;
+  created_at: string;
+}
