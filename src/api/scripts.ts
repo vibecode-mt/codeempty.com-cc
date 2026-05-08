@@ -1,18 +1,18 @@
 import { Hono } from 'hono';
 import type { Env, CommonScript } from '../types';
 import { uuid, now } from '../utils';
-import { requireSession } from './middleware';
+import { requireAdmin } from './middleware';
 
 export const scriptRoutes = new Hono<{ Bindings: Env }>();
 
-scriptRoutes.get('/', requireSession, async (c) => {
+scriptRoutes.get('/', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     'SELECT * FROM common_scripts ORDER BY sort_order ASC, created_at ASC',
   ).all<CommonScript>();
   return c.json(rows.results);
 });
 
-scriptRoutes.post('/', requireSession, async (c) => {
+scriptRoutes.post('/', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<CommonScript>>();
   if (!body.name || !body.html_snippet) return c.json({ error: 'name and html_snippet are required' }, 400);
 
@@ -29,7 +29,7 @@ scriptRoutes.post('/', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM common_scripts WHERE id = ?').bind(id).first<CommonScript>(), 201);
 });
 
-scriptRoutes.put('/:id', requireSession, async (c) => {
+scriptRoutes.put('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<Partial<CommonScript>>();
   const existing = await c.env.DB.prepare('SELECT * FROM common_scripts WHERE id = ?').bind(id).first<CommonScript>();
@@ -53,7 +53,7 @@ scriptRoutes.put('/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM common_scripts WHERE id = ?').bind(id).first<CommonScript>());
 });
 
-scriptRoutes.delete('/:id', requireSession, async (c) => {
+scriptRoutes.delete('/:id', requireAdmin, async (c) => {
   await c.env.DB.prepare('DELETE FROM common_scripts WHERE id = ?').bind(c.req.param('id')).run();
   await invalidateAllCache(c.env);
   return c.json({ ok: true });

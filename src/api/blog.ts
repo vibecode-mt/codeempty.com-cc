@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, BlogEntry } from '../types';
 import { uuid, slugify, now } from '../utils';
-import { requireSession, requireOAuthOrSession } from './middleware';
+import { requireAdmin, requireOAuthOrSession } from './middleware';
 
 export const blogRoutes = new Hono<{ Bindings: Env }>();
 
@@ -19,7 +19,7 @@ blogRoutes.get('/public', async (c) => {
   return c.json(rows.results);
 });
 
-blogRoutes.post('/', requireSession, async (c) => {
+blogRoutes.post('/', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<BlogEntry>>();
   if (!body.title || !body.entry_date) return c.json({ error: 'title and entry_date are required' }, 400);
 
@@ -47,7 +47,7 @@ blogRoutes.get('/:id', requireOAuthOrSession, async (c) => {
   return c.json(row);
 });
 
-blogRoutes.put('/:id', requireSession, async (c) => {
+blogRoutes.put('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<Partial<BlogEntry>>();
   const existing = await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?')
@@ -80,7 +80,7 @@ blogRoutes.put('/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?').bind(id).first<BlogEntry>());
 });
 
-blogRoutes.delete('/:id', requireSession, async (c) => {
+blogRoutes.delete('/:id', requireAdmin, async (c) => {
   const existing = await c.env.DB.prepare('SELECT slug FROM blog_entries WHERE id = ?')
     .bind(c.req.param('id'))
     .first<{ slug: string }>();

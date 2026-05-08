@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Page } from '../types';
 import { uuid, slugify, now } from '../utils';
-import { requireSession, requireOAuthOrSession } from './middleware';
+import { requireAdmin, requireOAuthOrSession } from './middleware';
 
 export const pageRoutes = new Hono<{ Bindings: Env }>();
 
@@ -10,7 +10,7 @@ pageRoutes.get('/', requireOAuthOrSession, async (c) => {
   return c.json(rows.results);
 });
 
-pageRoutes.post('/', requireSession, async (c) => {
+pageRoutes.post('/', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<Page>>();
   if (!body.title || !body.slug) return c.json({ error: 'title and slug are required' }, 400);
 
@@ -35,7 +35,7 @@ pageRoutes.get('/:id', requireOAuthOrSession, async (c) => {
   return c.json(row);
 });
 
-pageRoutes.put('/:id', requireSession, async (c) => {
+pageRoutes.put('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<Partial<Page>>();
   const existing = await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<Page>();
@@ -54,7 +54,7 @@ pageRoutes.put('/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<Page>());
 });
 
-pageRoutes.delete('/:id', requireSession, async (c) => {
+pageRoutes.delete('/:id', requireAdmin, async (c) => {
   const existing = await c.env.DB.prepare('SELECT slug FROM pages WHERE id = ?')
     .bind(c.req.param('id'))
     .first<{ slug: string }>();

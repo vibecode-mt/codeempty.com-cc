@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, PublishDestination } from '../types';
 import { uuid } from '../utils';
-import { requireSession } from './middleware';
+import { requireAdmin } from './middleware';
 
 export const destinationRoutes = new Hono<{ Bindings: Env }>();
 
@@ -13,14 +13,14 @@ function publicShape(d: PublishDestination): Omit<PublishDestination, 'client_se
   return rest;
 }
 
-destinationRoutes.get('/', requireSession, async (c) => {
+destinationRoutes.get('/', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     'SELECT * FROM publish_destinations ORDER BY created_at DESC',
   ).all<PublishDestination>();
   return c.json(rows.results.map(publicShape));
 });
 
-destinationRoutes.post('/', requireSession, async (c) => {
+destinationRoutes.post('/', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<PublishDestination>>();
   if (!body.name?.trim() || !body.api_url?.trim() || !body.client_id?.trim() || !body.client_secret?.trim()) {
     return c.json({ error: 'name, api_url, client_id, client_secret are required' }, 400);
@@ -40,7 +40,7 @@ destinationRoutes.post('/', requireSession, async (c) => {
   return c.json(publicShape(created!), 201);
 });
 
-destinationRoutes.delete('/:id', requireSession, async (c) => {
+destinationRoutes.delete('/:id', requireAdmin, async (c) => {
   await c.env.DB.prepare('DELETE FROM publish_destinations WHERE id = ?')
     .bind(c.req.param('id'))
     .run();
@@ -49,7 +49,7 @@ destinationRoutes.delete('/:id', requireSession, async (c) => {
 
 // Verify the destination's OAuth credentials work by performing an actual
 // client_credentials grant. Doesn't return the token itself, just success.
-destinationRoutes.post('/:id/test', requireSession, async (c) => {
+destinationRoutes.post('/:id/test', requireAdmin, async (c) => {
   const dest = await c.env.DB.prepare('SELECT * FROM publish_destinations WHERE id = ?')
     .bind(c.req.param('id'))
     .first<PublishDestination>();
@@ -65,7 +65,7 @@ destinationRoutes.post('/:id/test', requireSession, async (c) => {
 // Issue a token for the admin browser. The browser then drives the publish
 // flow itself — uploading media to and posting /projects/import on the
 // destination. The destination's client_secret never leaves the source.
-destinationRoutes.post('/:id/issue-token', requireSession, async (c) => {
+destinationRoutes.post('/:id/issue-token', requireAdmin, async (c) => {
   const dest = await c.env.DB.prepare('SELECT * FROM publish_destinations WHERE id = ?')
     .bind(c.req.param('id'))
     .first<PublishDestination>();

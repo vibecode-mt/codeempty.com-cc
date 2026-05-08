@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { uuid } from '../utils';
-import { requireSession, requireSessionOrOAuthWithScope } from './middleware';
+import { requireAdmin } from './middleware';
 
 export const mediaRoutes = new Hono<{ Bindings: Env }>();
 
 // Standard image upload (small files). Accepts session OR an OAuth bearer with
 // 'write' scope so cross-instance publish flows can re-upload media against
 // the destination without holding a session cookie.
-mediaRoutes.post('/upload', requireSessionOrOAuthWithScope('write'), async (c) => {
+mediaRoutes.post('/upload', requireAdmin, async (c) => {
   const formData = await c.req.formData();
   const file = formData.get('file') as File | null;
   if (!file) return c.json({ error: 'No file provided' }, 400);
@@ -35,7 +35,7 @@ async function ownsUpload(env: Env, uploadId: string, key: string, userId: strin
 }
 
 // Chunked video upload — init
-mediaRoutes.post('/upload/video/init', requireSession, async (c) => {
+mediaRoutes.post('/upload/video/init', requireAdmin, async (c) => {
   const { filename, contentType } = await c.req.json<{ filename: string; contentType: string }>();
   if (!filename || !contentType) return c.json({ error: 'filename and contentType are required' }, 400);
 
@@ -55,7 +55,7 @@ mediaRoutes.post('/upload/video/init', requireSession, async (c) => {
 });
 
 // Chunked video upload — upload one part
-mediaRoutes.post('/upload/video/chunk', requireSession, async (c) => {
+mediaRoutes.post('/upload/video/chunk', requireAdmin, async (c) => {
   const key = c.req.query('key');
   const uploadId = c.req.query('uploadId');
   const partNumber = Number(c.req.query('partNumber'));
@@ -73,7 +73,7 @@ mediaRoutes.post('/upload/video/chunk', requireSession, async (c) => {
 });
 
 // Chunked video upload — complete
-mediaRoutes.post('/upload/video/complete', requireSession, async (c) => {
+mediaRoutes.post('/upload/video/complete', requireAdmin, async (c) => {
   const { key, uploadId, parts } = await c.req.json<{
     key: string;
     uploadId: string;
@@ -100,7 +100,7 @@ mediaRoutes.post('/upload/video/complete', requireSession, async (c) => {
 });
 
 // Chunked video upload — abort
-mediaRoutes.delete('/upload/video/abort', requireSession, async (c) => {
+mediaRoutes.delete('/upload/video/abort', requireAdmin, async (c) => {
   const key = c.req.query('key');
   const uploadId = c.req.query('uploadId');
   if (!key || !uploadId) return c.json({ error: 'key and uploadId are required' }, 400);
@@ -170,7 +170,7 @@ mediaRoutes.get('/:key{.+}', async (c) => {
   return new Response(object.body, { status, headers });
 });
 
-mediaRoutes.delete('/:key{.+}', requireSession, async (c) => {
+mediaRoutes.delete('/:key{.+}', requireAdmin, async (c) => {
   await c.env.MEDIA.delete(c.req.param('key'));
   return c.json({ ok: true });
 });

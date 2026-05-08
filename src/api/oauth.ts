@@ -2,18 +2,18 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Env, OAuthApp, OAuthToken } from '../types';
 import { uuid, hashPassword, verifyPassword, now, addHours } from '../utils';
-import { requireSession } from './middleware';
+import { requireAdmin } from './middleware';
 
 export const oauthRoutes = new Hono<{ Bindings: Env }>();
 
-oauthRoutes.get('/apps', requireSession, async (c) => {
+oauthRoutes.get('/apps', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     'SELECT id, name, client_id, scopes, created_by, created_at FROM oauth_apps ORDER BY created_at DESC',
   ).all<Omit<OAuthApp, 'client_secret_hash' | 'client_secret_salt'>>();
   return c.json(rows.results);
 });
 
-oauthRoutes.post('/apps', requireSession, async (c) => {
+oauthRoutes.post('/apps', requireAdmin, async (c) => {
   const token = getCookie(c, 'session')!;
   const session = await c.env.DB.prepare('SELECT user_id FROM sessions WHERE token = ?')
     .bind(token)
@@ -41,7 +41,7 @@ oauthRoutes.post('/apps', requireSession, async (c) => {
   return c.json({ ...app, client_secret: clientSecret }, 201);
 });
 
-oauthRoutes.delete('/apps/:id', requireSession, async (c) => {
+oauthRoutes.delete('/apps/:id', requireAdmin, async (c) => {
   await c.env.DB.prepare('DELETE FROM oauth_apps WHERE id = ?').bind(c.req.param('id')).run();
   return c.json({ ok: true });
 });
@@ -82,7 +82,7 @@ oauthRoutes.post('/token', async (c) => {
 });
 
 // List active tokens (admin view)
-oauthRoutes.get('/tokens', requireSession, async (c) => {
+oauthRoutes.get('/tokens', requireAdmin, async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT t.id, t.app_id, t.expires_at, t.created_at, a.name as app_name
      FROM oauth_tokens t JOIN oauth_apps a ON a.id = t.app_id

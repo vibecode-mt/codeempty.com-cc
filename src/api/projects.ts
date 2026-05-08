@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, Project, ProjectStep, ContentElement, ProjectVersion } from '../types';
 import { uuid, slugify, now } from '../utils';
-import { requireSession, requireOAuthOrSession, requireSessionOrOAuthWithScope } from './middleware';
+import { requireAdmin, requireOAuthOrSession } from './middleware';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -20,7 +20,7 @@ projectRoutes.get('/public', async (c) => {
   return c.json(rows.results);
 });
 
-projectRoutes.post('/', requireSession, async (c) => {
+projectRoutes.post('/', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<Project>>();
   if (!body.title) return c.json({ error: 'title is required' }, 400);
 
@@ -55,7 +55,7 @@ projectRoutes.get('/:id', requireOAuthOrSession, async (c) => {
   return c.json({ ...project, steps: steps.results });
 });
 
-projectRoutes.put('/:id', requireSession, async (c) => {
+projectRoutes.put('/:id', requireAdmin, async (c) => {
   const body = await c.req.json<Partial<Project>>();
   const id = c.req.param('id');
   const existing = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
@@ -88,7 +88,7 @@ projectRoutes.put('/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>());
 });
 
-projectRoutes.delete('/:id', requireSession, async (c) => {
+projectRoutes.delete('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT slug FROM projects WHERE id = ?').bind(id).first<{ slug: string }>();
   if (!project) return c.json({ error: 'Not found' }, 404);
@@ -108,7 +108,7 @@ projectRoutes.get('/:projectId/steps', requireOAuthOrSession, async (c) => {
   return c.json(steps.results);
 });
 
-projectRoutes.post('/:projectId/steps', requireSession, async (c) => {
+projectRoutes.post('/:projectId/steps', requireAdmin, async (c) => {
   const projectId = c.req.param('projectId');
   const body = await c.req.json<Partial<ProjectStep>>();
   if (!body.title) return c.json({ error: 'title is required' }, 400);
@@ -136,7 +136,7 @@ projectRoutes.post('/:projectId/steps', requireSession, async (c) => {
   return c.json(step, 201);
 });
 
-projectRoutes.put('/steps/:id', requireSession, async (c) => {
+projectRoutes.put('/steps/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<Partial<ProjectStep>>();
   const existing = await c.env.DB.prepare('SELECT * FROM project_steps WHERE id = ?').bind(id).first<ProjectStep>();
@@ -162,7 +162,7 @@ projectRoutes.put('/steps/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM project_steps WHERE id = ?').bind(id).first<ProjectStep>());
 });
 
-projectRoutes.delete('/steps/:id', requireSession, async (c) => {
+projectRoutes.delete('/steps/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -173,7 +173,7 @@ projectRoutes.delete('/steps/:id', requireSession, async (c) => {
   return c.json({ ok: true });
 });
 
-projectRoutes.post('/steps/reorder', requireSession, async (c) => {
+projectRoutes.post('/steps/reorder', requireAdmin, async (c) => {
   const { orders } = await c.req.json<{ orders: { id: string; sort_order: number }[] }>();
   const stmts = orders.map((o) =>
     c.env.DB.prepare('UPDATE project_steps SET sort_order=? WHERE id=?').bind(o.sort_order, o.id),
@@ -183,7 +183,7 @@ projectRoutes.post('/steps/reorder', requireSession, async (c) => {
 });
 
 // Bulk time-shift: shift all steps/elements with video_timestamp_ms >= split_ms by offset_ms
-projectRoutes.post('/:id/timeshift', requireSession, async (c) => {
+projectRoutes.post('/:id/timeshift', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const { split_ms, offset_ms } = await c.req.json<{ split_ms: number; offset_ms: number }>();
   if (split_ms == null || offset_ms == null) {
@@ -298,7 +298,7 @@ interface ImportCaption {
   tags?: string;
 }
 
-projectRoutes.post('/:id/import-captions', requireSession, async (c) => {
+projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
     .bind(projectId)
@@ -438,7 +438,7 @@ interface ExportItem {
 // Export project content as an SRT file. Filter by tags; "include_untagged" controls
 // whether items with no tags pass through. Items lacking video_timestamp_ms are skipped
 // since SRT requires timing.
-projectRoutes.get('/:id/export-srt', requireSession, async (c) => {
+projectRoutes.get('/:id/export-srt', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
     .bind(projectId)
@@ -543,7 +543,7 @@ function stripHtml(s: string): string {
 // Bulk delete steps and/or elements in a project, optionally filtered by tags.
 // scope: 'steps' wipes the matching steps and their elements; 'elements' only matches
 // content_elements directly. tags=[] means "all" (no tag filter).
-projectRoutes.post('/:id/bulk-delete', requireSession, async (c) => {
+projectRoutes.post('/:id/bulk-delete', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
     .bind(projectId)
@@ -639,7 +639,7 @@ projectRoutes.post('/:id/bulk-delete', requireSession, async (c) => {
 // "action" picks add vs remove and "apply_tags" is the tag list to mutate with.
 // Used by the admin "Bulk tag" modal so an editor can stamp e.g. "step:major"
 // onto every step matching some existing-tag filter without clicking each row.
-projectRoutes.post('/:id/bulk-tag', requireSession, async (c) => {
+projectRoutes.post('/:id/bulk-tag', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?')
     .bind(projectId)
@@ -912,7 +912,7 @@ async function applySnapshot(
   await invalidateProjectCache(env, p.slug);
 }
 
-projectRoutes.post('/:id/versions', requireSession, async (c) => {
+projectRoutes.post('/:id/versions', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   let body: { label?: string } = {};
   try { body = await c.req.json(); } catch { /* empty body */ }
@@ -925,7 +925,7 @@ projectRoutes.post('/:id/versions', requireSession, async (c) => {
   }
 });
 
-projectRoutes.get('/:id/versions', requireSession, async (c) => {
+projectRoutes.get('/:id/versions', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const rows = await c.env.DB.prepare(
     `SELECT id, project_id, version_num, label, source, created_by, created_at,
@@ -939,7 +939,7 @@ projectRoutes.get('/:id/versions', requireSession, async (c) => {
   return c.json(rows.results);
 });
 
-projectRoutes.post('/:id/versions/:vid/restore', requireSession, async (c) => {
+projectRoutes.post('/:id/versions/:vid/restore', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const versionId = c.req.param('vid');
   const userId = (c.get('userId' as never) as string | null) ?? null;
@@ -981,7 +981,7 @@ projectRoutes.post('/:id/versions/:vid/restore', requireSession, async (c) => {
   });
 });
 
-projectRoutes.delete('/:id/versions/:vid', requireSession, async (c) => {
+projectRoutes.delete('/:id/versions/:vid', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const versionId = c.req.param('vid');
   await c.env.DB.prepare('DELETE FROM project_versions WHERE id = ? AND project_id = ?')
@@ -1203,7 +1203,7 @@ async function importSnapshot(
 
 projectRoutes.post(
   '/import',
-  requireSessionOrOAuthWithScope('write'),
+  requireAdmin,
   async (c) => {
     const body = await c.req.json<{
       manifest: { format_version: number };
@@ -1269,7 +1269,7 @@ projectRoutes.post(
   },
 );
 
-projectRoutes.get('/:id/export-data', requireSession, async (c) => {
+projectRoutes.get('/:id/export-data', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   let snapshot: SnapshotShape;
   try {

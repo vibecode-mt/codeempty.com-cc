@@ -54,7 +54,7 @@ async function checkOAuthScope(
   env: Env,
   authHeader: string | undefined,
   scope: string,
-): Promise<{ ok: true; userId: string | null } | { ok: false; reason: string; status: 401 | 403 }> {
+): Promise<{ ok: true; appId: string } | { ok: false; reason: string; status: 401 | 403 }> {
   if (!authHeader?.startsWith('Bearer ')) {
     return { ok: false, reason: 'Missing bearer token', status: 401 };
   }
@@ -69,10 +69,14 @@ async function checkOAuthScope(
     .first<{ app_id: string; scopes: string }>();
   if (!row) return { ok: false, reason: 'Invalid or expired token', status: 401 };
   const granted = (row.scopes ?? '').split(/[\s,]+/).filter(Boolean);
-  if (!granted.includes(scope)) {
+  // Scope hierarchy: 'write' implies 'read'. A token granted 'write' satisfies
+  // any endpoint asking for either 'read' or 'write'. Endpoints asking for
+  // 'write' specifically still require 'write'.
+  const ok = granted.includes(scope) || (scope === 'read' && granted.includes('write'));
+  if (!ok) {
     return { ok: false, reason: `Missing required scope: ${scope}`, status: 403 };
   }
-  return { ok: true, userId: null };
+  return { ok: true, appId: row.app_id };
 }
 
 // Bearer-only, with required scope check. Used for cross-instance API endpoints
@@ -94,6 +98,9 @@ export function requireSessionOrOAuthWithScope(scope: string) {
     if (auth?.startsWith('Bearer ')) {
       const result = await checkOAuthScope(c.env, auth, scope);
       if (!result.ok) return c.json({ error: result.reason }, result.status);
+      // Synthetic identity for OAuth callers so per-user state (e.g. multipart
+      // upload ownership) works the same way as for session callers.
+      c.set('userId' as never, `oauth:${result.appId}`);
       await next();
       return;
     }
@@ -109,3 +116,8 @@ export function requireSessionOrOAuthWithScope(scope: string) {
     await next();
   });
 }
+
+// Friendly alias for "any admin caller": session cookie OR an OAuth bearer
+// with 'write' scope. Used by every admin write endpoint so the same routes
+// serve both the browser admin and an AI / CLI agent driving the API.
+export const requireAdmin = requireSessionOrOAuthWithScope('write');

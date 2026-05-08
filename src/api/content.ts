@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, ContentElement, ParentType } from '../types';
 import { uuid, now } from '../utils';
-import { requireSession, requireOAuthOrSession } from './middleware';
+import { requireAdmin, requireOAuthOrSession } from './middleware';
 
 export const contentRoutes = new Hono<{ Bindings: Env }>();
 
@@ -15,7 +15,7 @@ contentRoutes.get('/:parentType/:parentId', requireOAuthOrSession, async (c) => 
   return c.json(rows.results);
 });
 
-contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
+contentRoutes.post('/:parentType/:parentId', requireAdmin, async (c) => {
   const { parentType, parentId } = c.req.param();
   const body = await c.req.json<Partial<ContentElement>>();
   if (!body.type) return c.json({ error: 'type is required' }, 400);
@@ -57,7 +57,7 @@ contentRoutes.post('/:parentType/:parentId', requireSession, async (c) => {
   return c.json(el, 201);
 });
 
-contentRoutes.put('/:id', requireSession, async (c) => {
+contentRoutes.put('/:id', requireAdmin, async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json<Partial<ContentElement>>();
   const existing = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?')
@@ -90,7 +90,7 @@ contentRoutes.put('/:id', requireSession, async (c) => {
   return c.json(await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>());
 });
 
-contentRoutes.delete('/:id', requireSession, async (c) => {
+contentRoutes.delete('/:id', requireAdmin, async (c) => {
   const existing = await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?')
     .bind(c.req.param('id'))
     .first<ContentElement>();
@@ -101,7 +101,7 @@ contentRoutes.delete('/:id', requireSession, async (c) => {
   return c.json({ ok: true });
 });
 
-contentRoutes.post('/reorder', requireSession, async (c) => {
+contentRoutes.post('/reorder', requireAdmin, async (c) => {
   const { orders } = await c.req.json<{ orders: { id: string; sort_order: number }[] }>();
   const stmts = orders.map((o) =>
     c.env.DB.prepare('UPDATE content_elements SET sort_order=?, updated_at=? WHERE id=?').bind(o.sort_order, now(), o.id),
