@@ -68,13 +68,38 @@ body{font-family:'Inter',sans-serif;color:#1a1a1a;background:#fff;line-height:1.
 a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
 img{max-width:100%;height:auto;display:block}
 .nav{max-width:1100px;margin:0 auto;padding:1rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
-.nav-brand{font-weight:700;font-size:1.2rem;color:#1a1a1a}
+.nav-brand{font-weight:700;font-size:1.25rem;color:#1a1a1a;letter-spacing:-.01em}
 .nav-links{display:flex;gap:1.5rem;font-size:.95rem}
 .nav-links a{color:#555}
 .main{max-width:1100px;margin:0 auto;padding:2rem 1.5rem;min-height:70vh}
 .footer{text-align:center;padding:2rem;color:#888;font-size:.875rem;border-top:1px solid #eee}
-.page-title{font-size:2rem;font-weight:700;margin-bottom:.5rem}
-.page-subtitle{color:#555;margin-bottom:2rem}
+.page-title{font-size:1.55rem;font-weight:700;margin-bottom:.4rem;letter-spacing:-.01em}
+.page-subtitle{color:#555;margin-bottom:2rem;font-size:.95rem;line-height:1.55}
+
+/* Typography for free-form HTML content (description elements, page bodies,
+ * blog entries). The site-wide '*{margin:0;padding:0}' reset zeroes browser
+ * defaults so authored h2/ul/blockquote tags would render with no visual
+ * hierarchy. Restore them inside content containers only. */
+.content-el-desc,.blog-entry-content{font-size:1rem;line-height:1.7}
+.content-el-desc h1,.content-el-desc h2,.content-el-desc h3,.content-el-desc h4,
+.blog-entry-content h1,.blog-entry-content h2,.blog-entry-content h3,.blog-entry-content h4{font-weight:600;line-height:1.3;margin:1.1em 0 .5em}
+.content-el-desc h1,.blog-entry-content h1{font-size:1.5rem}
+.content-el-desc h2,.blog-entry-content h2{font-size:1.3rem}
+.content-el-desc h3,.blog-entry-content h3{font-size:1.12rem}
+.content-el-desc h4,.blog-entry-content h4{font-size:1.02rem}
+.content-el-desc p,.blog-entry-content p{margin:.5em 0}
+.content-el-desc ul,.content-el-desc ol,
+.blog-entry-content ul,.blog-entry-content ol{padding-left:1.5rem;margin:.6em 0}
+.content-el-desc ul,.blog-entry-content ul{list-style:disc}
+.content-el-desc ol,.blog-entry-content ol{list-style:decimal}
+.content-el-desc li,.blog-entry-content li{margin:.2em 0}
+.content-el-desc blockquote,.blog-entry-content blockquote{border-left:3px solid #d1d5db;padding-left:1rem;color:#4b5563;margin:.7em 0;font-style:italic}
+.content-el-desc a,.blog-entry-content a{color:#2563eb;text-decoration:underline}
+.content-el-desc code,.blog-entry-content code{background:#f3f4f6;padding:.1em .35em;border-radius:.25rem;font-family:ui-monospace,monospace;font-size:.95em}
+.content-el-desc pre,.blog-entry-content pre{background:#1f2937;color:#f3f4f6;padding:.85rem 1rem;border-radius:.5rem;overflow-x:auto;font-size:.85rem;line-height:1.55;margin:.7em 0}
+.content-el-desc pre code,.blog-entry-content pre code{background:transparent;color:inherit;padding:0}
+.content-el-desc hr,.blog-entry-content hr{border:0;border-top:1px solid #e5e7eb;margin:1.2em 0}
+.content-el-desc img,.blog-entry-content img{margin:.5em 0;border-radius:.5rem}
 .projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;margin-top:1.5rem}
 .project-card{display:block;color:inherit;text-decoration:none;background:#fff;border:1px solid #e5e7eb;border-radius:.75rem;overflow:hidden;transition:transform .18s ease,box-shadow .22s ease,border-color .18s ease}
 .project-card:hover{text-decoration:none;transform:translateY(-3px);box-shadow:0 14px 38px rgba(15,23,42,.10);border-color:#d4d4d8}

@@ -7,4 +7,24 @@ body {
   background: #f9fafb;
 }
 
+/* Tailwind preflight zeroes out margins and list-style on h1-h6/ul/ol/li.
+ * The HtmlEditor uses class="prose" but we don't ship the typography
+ * plugin (saves ~100KB), so add explicit rules here. Without these,
+ * clicking H2 / bullet-list in the editor toolbar updates the underlying
+ * HTML but the editor view shows no visual change — confusing the admin.
+ */
+.prose h1 { font-size: 1.6rem; font-weight: 700; margin: 0.8em 0 0.4em; line-height: 1.3; }
+.prose h2 { font-size: 1.35rem; font-weight: 600; margin: 0.8em 0 0.4em; line-height: 1.35; }
+.prose h3 { font-size: 1.15rem; font-weight: 600; margin: 0.7em 0 0.3em; line-height: 1.4; }
+.prose h4 { font-size: 1.05rem; font-weight: 600; margin: 0.6em 0 0.3em; }
+.prose p { margin: 0.5em 0; }
+.prose ul { list-style: disc; padding-left: 1.5rem; margin: 0.5em 0; }
+.prose ol { list-style: decimal; padding-left: 1.5rem; margin: 0.5em 0; }
+.prose li { margin: 0.2em 0; }
+.prose blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; color: #4b5563; margin: 0.6em 0; font-style: italic; }
+.prose a { color: #2563eb; text-decoration: underline; }
+.prose code { background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 0.25rem; font-family: ui-monospace, monospace; font-size: 0.95em; }
+.prose pre { background: #1f2937; color: #f3f4f6; padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; margin: 0.6em 0; }
+.prose pre code { background: transparent; color: inherit; padding: 0; }
 .prose img { border-radius: 0.5rem; max-width: 100%; }
+.prose hr { border: 0; border-top: 1px solid #e5e7eb; margin: 1em 0; }
