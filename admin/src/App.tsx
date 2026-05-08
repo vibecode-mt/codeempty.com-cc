@@ -13,6 +13,7 @@ import Blog from './pages/Blog';
 import BlogEdit from './pages/BlogEdit';
 import Scripts from './pages/Scripts';
 import OAuthApps from './pages/OAuthApps';
+import Destinations from './pages/Destinations';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/blog/:id" element={<BlogEdit />} />
         <Route path="/scripts" element={<Scripts />} />
         <Route path="/oauth" element={<OAuthApps />} />
+        <Route path="/destinations" element={<Destinations />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

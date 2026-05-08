@@ -55,6 +55,19 @@ export const api = {
   exportData: (projectId: string) =>
     req<ExportData>('GET', `/projects/${projectId}/export-data`),
 
+  // Publish destinations
+  listDestinations: () => req<PublishDestination[]>('GET', '/destinations'),
+  createDestination: (b: { name: string; api_url: string; client_id: string; client_secret: string; scopes?: string }) =>
+    req<PublishDestination>('POST', '/destinations', b),
+  deleteDestination: (id: string) => req<{ ok: boolean }>('DELETE', `/destinations/${id}`),
+  testDestination: (id: string) =>
+    req<{ ok: boolean; error?: string; scope?: string; expires_in?: number }>('POST', `/destinations/${id}/test`),
+  issueDestinationToken: (id: string) =>
+    req<{ api_url: string; access_token: string; expires_in: number; scope: string }>(
+      'POST',
+      `/destinations/${id}/issue-token`,
+    ),
+
   // Bundle import — browser ships rewritten payload after re-uploading media
   importBundle: (body: {
     manifest: BundleManifest;
@@ -236,6 +249,14 @@ export interface CommonScript {
 export interface OAuthApp {
   id: string; name: string; client_id: string; scopes: string;
   created_by: string; created_at: string;
+}
+export interface PublishDestination {
+  id: string;
+  name: string;
+  api_url: string;
+  client_id: string;
+  scopes: string;
+  created_at: string;
 }
 export interface ProjectVersionSummary {
   id: string;

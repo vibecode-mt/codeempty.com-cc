@@ -10,6 +10,7 @@ import { oauthRoutes } from './oauth';
 import { scriptRoutes } from './scripts';
 import { mediaRoutes } from './media';
 import { cacheRoutes } from './cache';
+import { destinationRoutes } from './destinations';
 
 export const app = new Hono<{ Bindings: Env }>().basePath('/api');
 
@@ -24,6 +25,7 @@ app.route('/oauth', oauthRoutes);
 app.route('/scripts', scriptRoutes);
 app.route('/media', mediaRoutes);
 app.route('/cache', cacheRoutes);
+app.route('/destinations', destinationRoutes);
 
 app.get('/health', (c) => c.json({ ok: true }));
 
