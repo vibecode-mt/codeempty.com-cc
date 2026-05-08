@@ -989,3 +989,59 @@ projectRoutes.delete('/:id/versions/:vid', requireSession, async (c) => {
     .run();
   return c.json({ ok: true });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Export: returns the snapshot plus a list of R2 keys the browser must fetch
+// to assemble a `.codeempty` bundle. Avoids server-side zipping (would blow
+// past the free-tier per-request CPU budget on a 100MB project).
+
+// Pull every R2 key referenced by a project's rows. Owned-by-R2 fields only —
+// external URLs (youtube/url/user_comment.profile_url) are ignored.
+function collectMediaKeys(project: Project, elements: ContentElement[]): string[] {
+  const keys = new Set<string>();
+  const fromUrl = (u: string | null | undefined) => {
+    if (!u) return;
+    const m = u.match(/^\/api\/media\/(.+)$/);
+    if (m) keys.add(m[1]);
+  };
+  fromUrl(project.image_url);
+  fromUrl(project.video_url);
+  if (project.video_key) keys.add(project.video_key);
+  for (const el of elements) {
+    if (el.type === 'image') {
+      try {
+        const parsed = JSON.parse(el.content) as { url?: string };
+        fromUrl(parsed.url);
+      } catch { /* malformed — ignore */ }
+    }
+  }
+  return Array.from(keys);
+}
+
+projectRoutes.get('/:id/export-data', requireSession, async (c) => {
+  const projectId = c.req.param('id');
+  let snapshot: SnapshotShape;
+  try {
+    snapshot = await buildSnapshot(c.env, projectId);
+  } catch (e) {
+    return c.json({ error: String(e) }, 404);
+  }
+  const mediaKeys = collectMediaKeys(snapshot.project, snapshot.elements);
+  const media = mediaKeys.map((key) => ({ key, url: `/api/media/${key}` }));
+  return c.json({
+    manifest: {
+      format_version: 1,
+      exported_at: now(),
+      source_slug: snapshot.project.slug,
+      stats: {
+        step_count: snapshot.steps.length,
+        element_count: snapshot.elements.length,
+        media_count: media.length,
+      },
+    },
+    project: snapshot.project,
+    steps: snapshot.steps,
+    elements: snapshot.elements,
+    media,
+  });
+});

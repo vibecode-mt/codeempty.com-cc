@@ -51,6 +51,10 @@ export const api = {
       },
     ),
 
+  // Bundle export — server returns metadata + media key list; browser zips
+  exportData: (projectId: string) =>
+    req<ExportData>('GET', `/projects/${projectId}/export-data`),
+
   // Project versioning
   listVersions: (projectId: string) =>
     req<ProjectVersionSummary[]>('GET', `/projects/${projectId}/versions`),
@@ -229,4 +233,17 @@ export interface ProjectVersionSummary {
   created_by: string | null;
   created_at: string;
   size_bytes: number;
+}
+export interface BundleManifest {
+  format_version: number;
+  exported_at: string;
+  source_slug: string;
+  stats: { step_count: number; element_count: number; media_count: number };
+}
+export interface ExportData {
+  manifest: BundleManifest;
+  project: Project;
+  steps: ProjectStep[];
+  elements: ContentElement[];
+  media: { key: string; url: string }[];
 }

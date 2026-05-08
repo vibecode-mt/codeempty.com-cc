@@ -13,6 +13,7 @@ import ExportSrtModal from '../components/ExportSrtModal';
 import BulkDeleteModal from '../components/BulkDeleteModal';
 import BulkTagModal from '../components/BulkTagModal';
 import VersionsModal from '../components/VersionsModal';
+import { buildBundle, downloadBlob, type BundleProgress } from '../lib/bundle';
 import TagsEditor from '../components/TagsEditor';
 
 function formatTimestamp(ms: number) {
@@ -77,6 +78,8 @@ export default function ProjectEdit() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showBulkTag, setShowBulkTag] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [exporting, setExporting] = useState<BundleProgress | null>(null);
+  const [exportError, setExportError] = useState('');
   // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
   // manageTagInput is the draft in the toolbar input; activation happens on the
   // Start button or Enter so the user can finish typing before the banner kicks in.
@@ -158,6 +161,21 @@ export default function ProjectEdit() {
       content: JSON.stringify({ url }),
     });
     await prependStepElement(stepId, el);
+  }
+
+  async function handleExportBundle() {
+    if (!pid || exporting) return;
+    setExportError('');
+    setExporting({ phase: 'fetching-media', current: 0, total: 0, label: 'Loading project data…' });
+    try {
+      const data = await api.exportData(pid);
+      const blob = await buildBundle(data, (p) => setExporting(p));
+      downloadBlob(blob, `${data.project.slug || 'project'}.codeempty`);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(null);
+    }
   }
 
   async function toggleStepHidden(step: ProjectStep) {
@@ -619,7 +637,27 @@ export default function ProjectEdit() {
           >
             🗂 Versions
           </button>
+          <button
+            onClick={handleExportBundle}
+            disabled={!!exporting}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 shrink-0 disabled:opacity-50"
+            title="Download the entire project (data + media) as a .codeempty file"
+          >
+            📦 Export bundle
+          </button>
         </div>
+        {exporting && (
+          <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-900 flex items-center gap-3">
+            <span className="animate-spin inline-block">⟳</span>
+            <span className="flex-1">{exporting.label}</span>
+            {exporting.total > 0 && (
+              <span className="font-mono text-xs">{exporting.current} / {exporting.total}</span>
+            )}
+          </div>
+        )}
+        {exportError && (
+          <p className="text-red-500 text-sm mt-1">Export failed: {exportError}</p>
+        )}
         {stepError && <p className="text-red-500 text-sm">{stepError}</p>}
       </div>
     </div>
