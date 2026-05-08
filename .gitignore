@@ -8,6 +8,7 @@ dist/
 
 # Local notes / scratch
 *-local-command-caveatcaveat-*.txt
+claude-exports/
 ref/
 capsrt/
 test_captions.srt
