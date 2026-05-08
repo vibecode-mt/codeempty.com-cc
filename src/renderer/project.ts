@@ -37,7 +37,43 @@ interface SlideshowImage {
   caption: string;
   stepIdx: number;
   stepTitle: string;
+  // Element-level tags (`element:...`) and the parent step's tags
+  // (`step:...`) — both used by the client filter to keep the slideshow
+  // in sync with whatever's currently visible on the page.
   tags: string[];
+  stepTags: string[];
+}
+
+// Pull a plain-text "search index" from an element's content. Used to build
+// each step's data-step-search attribute so quick search hits element text,
+// not just step titles.
+function extractElementText(el: ContentElement): string {
+  const stripHtml = (s: string) =>
+    s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  switch (el.type) {
+    case 'description':
+    case 'title':
+    case 'prompt_code':
+    case 'youtube':
+      return stripHtml(el.content);
+    case 'url':
+      try {
+        const p = JSON.parse(el.content) as { href?: string; label?: string };
+        return `${p.label ?? ''} ${p.href ?? ''}`;
+      } catch { return el.content; }
+    case 'image':
+      try {
+        const p = JSON.parse(el.content) as { caption?: string };
+        return stripHtml(p.caption ?? '');
+      } catch { return ''; }
+    case 'user_comment':
+      try {
+        const p = JSON.parse(el.content) as { username?: string; text?: string };
+        return `${p.username ?? ''} ${stripHtml(p.text ?? '')}`;
+      } catch { return ''; }
+    default:
+      return el.content;
+  }
 }
 
 export async function renderProject(slug: string, env: Env): Promise<Response> {
@@ -102,9 +138,16 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     const stepTags = pickNamespacedTags(step.tags, 'step:');
     for (const t of stepTags) stepFilterTags.add(t);
 
+    // Build a search index for this step: title + every element's plain text.
+    // Quick search matches against this so users can find content, not only
+    // step titles.
+    const searchParts: string[] = [step.title];
+
     const elementHtml = elements.map((el) => {
       const elTags = pickNamespacedTags(el.tags, 'element:');
       for (const t of elTags) elementFilterTags.add(t);
+
+      searchParts.push(extractElementText(el));
 
       if (el.type === 'image') {
         try {
@@ -116,6 +159,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
               stepIdx: i,
               stepTitle: step.title,
               tags: elTags,
+              stepTags,
             });
           }
         } catch { /* skip malformed image */ }
@@ -131,6 +175,8 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       return `<div class="content-el-wrap"${dataAttr}>${wrapped}</div>`;
     }).join('');
 
+    const stepSearchIndex = searchParts.join(' ').toLowerCase();
+
     const elementCount = elements.length;
     const imageCount = elements.filter((e) => e.type === 'image').length;
     const summaryMeta = elementCount > 0
@@ -143,7 +189,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     const stepTsBadge = ytBadge(step.video_timestamp_ms);
 
     stepHtml.push(
-      `<details class="step" id="${anchor}"${stepDataAttr}${open} data-step-title="${escHtml(step.title.toLowerCase())}">
+      `<details class="step" id="${anchor}"${stepDataAttr}${open} data-step-search="${escHtml(stepSearchIndex)}">
         <summary class="step-summary">
           <span class="step-num">${i + 1}.</span>
           <span class="step-title-text">${escHtml(step.title)}</span>
@@ -178,7 +224,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 
   const showSearch = steps.length > 5;
   const searchBox = showSearch
-    ? `<input class="step-search" type="search" placeholder="🔍 Search steps…" aria-label="Search steps">`
+    ? `<input class="step-search" type="search" placeholder="🔍 Search steps & content…" aria-label="Search steps and element content">`
     : '';
 
   const tocBlock = steps.length > 5
@@ -245,16 +291,20 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   function $$(sel,root){return Array.prototype.slice.call((root||document).querySelectorAll(sel));}
   var stepActive=new Set(),elActive=new Set();
   var search='';
+  function stepMatches(s){
+    if(stepActive.size>0){
+      var tags=(s.getAttribute('data-step-tags')||'').split(',').filter(Boolean);
+      if(!tags.some(function(t){return stepActive.has(t);}))return false;
+    }
+    if(search){
+      var idx=s.getAttribute('data-step-search')||'';
+      if(idx.indexOf(search)<0)return false;
+    }
+    return true;
+  }
   function update(){
-    $$('.step').forEach(function(s){
-      var tagOk=true;
-      if(stepActive.size>0){
-        var tags=(s.getAttribute('data-step-tags')||'').split(',').filter(Boolean);
-        tagOk=tags.some(function(t){return stepActive.has(t);});
-      }
-      var titleOk=!search||(s.getAttribute('data-step-title')||'').indexOf(search)>=0;
-      s.style.display=tagOk&&titleOk?'':'none';
-    });
+    var stepEls=$$('.step');
+    stepEls.forEach(function(s){s.style.display=stepMatches(s)?'':'none';});
     $$('.content-el-wrap').forEach(function(e){
       var tags=(e.getAttribute('data-el-tags')||'').split(',').filter(Boolean);
       var v=elActive.size===0||tags.some(function(t){return elActive.has(t);});
@@ -268,6 +318,29 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       }
       t.style.display=tagOk?'':'none';
     });
+    refreshSlideshowVisibility(stepEls);
+  }
+  // Recomputes the filtered slideshow set + the trigger button text/state
+  // every time filters or search change.
+  var allImages=[],filteredImages=[];
+  var triggerBtn=$('.slideshow-trigger');
+  var triggerTotal=0;
+  function refreshSlideshowVisibility(stepEls){
+    if(!triggerBtn||!allImages.length)return;
+    // Build a per-step "matches" map (step idx → boolean) once per call.
+    var stepOk=new Array(stepEls.length);
+    for(var i=0;i<stepEls.length;i++)stepOk[i]=stepMatches(stepEls[i]);
+    filteredImages=allImages.filter(function(im){
+      if(stepOk[im.stepIdx]===false)return false;
+      if(elActive.size>0&&!im.tags.some(function(t){return elActive.has(t);}))return false;
+      return true;
+    });
+    if(filteredImages.length===triggerTotal){
+      triggerBtn.textContent='🎞 Slideshow ('+triggerTotal+')';
+    }else{
+      triggerBtn.textContent='🎞 Slideshow ('+filteredImages.length+' of '+triggerTotal+')';
+    }
+    triggerBtn.disabled=filteredImages.length===0;
   }
   $$('.filter-row').forEach(function(row){
     var scope=row.getAttribute('data-filter-scope');
@@ -334,7 +407,9 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   // Slideshow
   var ssData=document.getElementById('slideshow-data');
   if(ssData){
-    var images=JSON.parse(ssData.textContent);
+    allImages=JSON.parse(ssData.textContent);
+    filteredImages=allImages.slice();
+    triggerTotal=allImages.length;
     var modal=$('.ss-modal');
     var img=$('.ss-img',modal);
     var counter=$('.ss-counter',modal);
@@ -343,15 +418,18 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     var playBtn=$('.ss-play',modal);
     var intervalSelect=$('.ss-interval',modal);
     var progress=$('.ss-progress',modal);
-    var idx=0,playing=false,timer=null;
+    // Active slide deck — snapshot of filteredImages taken at open() time.
+    // Filters changing while the modal is open don't yank the user mid-show.
+    var deck=[],idx=0,playing=false,timer=null;
     function show(){
-      if(images.length===0)return;
-      idx=(idx+images.length)%images.length;
-      var im=images[idx];
+      if(deck.length===0)return;
+      idx=(idx+deck.length)%deck.length;
+      var im=deck[idx];
       img.src=im.url;
-      counter.textContent=(idx+1)+' / '+images.length;
+      counter.textContent=(idx+1)+' / '+deck.length;
       stepLabel.textContent='— '+im.stepTitle;
       caption.textContent=im.caption||'';
+      progress.max=String(Math.max(0,deck.length-1));
       progress.value=String(idx);
     }
     function next(){idx++;show();}
@@ -368,10 +446,17 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       if(playing)startTimer();else stopTimer();
     }
     function togglePlay(){setPlaying(!playing);}
-    function open(at){idx=at||0;show();modal.hidden=false;document.body.style.overflow='hidden';}
+    function open(at){
+      deck=filteredImages.slice();
+      if(deck.length===0)return;
+      idx=at||0;
+      show();
+      modal.hidden=false;
+      document.body.style.overflow='hidden';
+    }
     function close(){modal.hidden=true;setPlaying(false);document.body.style.overflow='';}
     $$('.slideshow-trigger').forEach(function(b){
-      b.addEventListener('click',function(){open(0);});
+      b.addEventListener('click',function(){if(!b.disabled)open(0);});
     });
     $('.ss-prev',modal).addEventListener('click',prev);
     $('.ss-next',modal).addEventListener('click',next);
@@ -394,11 +479,16 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     $$('.content-el-img img').forEach(function(im){
       im.style.cursor='zoom-in';
       im.addEventListener('click',function(){
+        // Open at the matching image within the currently filtered deck.
         var src=im.getAttribute('src');
-        for(var k=0;k<images.length;k++){if(images[k].url===src){open(k);return;}}
+        deck=filteredImages.slice();
+        if(deck.length===0)return;
+        for(var k=0;k<deck.length;k++){if(deck[k].url===src){open(k);return;}}
         open(0);
       });
     });
+    // Initial sync (filters at page load might already have constrained things)
+    refreshSlideshowVisibility($$('.step'));
   }
 })();</script>`
     : '';
