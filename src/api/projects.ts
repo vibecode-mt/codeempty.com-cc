@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Project, ProjectStep, ContentElement, ProjectVersion } from '../types';
 import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
+import { startPublishJob } from './publish';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -988,6 +989,38 @@ projectRoutes.delete('/:id/versions/:vid', requireAdmin, async (c) => {
     .bind(versionId, projectId)
     .run();
   return c.json({ ok: true });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Publish: kick off a background publish job. Returns immediately with a
+// job_id; caller polls GET /api/publish/jobs/:jobId for progress.
+projectRoutes.post('/:id/publish', requireAdmin, async (c) => {
+  const projectId = c.req.param('id');
+  let body: { destination_id?: string; mode?: 'create' | 'replace'; target_project_id?: string; label?: string } = {};
+  try { body = await c.req.json(); } catch { /* empty body */ }
+  if (!body.destination_id) return c.json({ error: 'destination_id is required' }, 400);
+
+  const userId = (c.get('userId' as never) as string | null) ?? null;
+  const origin = new URL(c.req.url).origin;
+  const auth = c.req.header('Authorization') ?? '';
+
+  const result = await startPublishJob(c.env, c.executionCtx, origin, auth, {
+    projectId,
+    destinationId: body.destination_id,
+    mode: body.mode ?? 'create',
+    targetProjectId: body.target_project_id ?? null,
+    label: body.label ?? null,
+    createdBy: userId,
+  });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  return c.json(
+    {
+      job_id: result.jobId,
+      status: 'pending',
+      poll_url: `/api/publish/jobs/${result.jobId}`,
+    },
+    202,
+  );
 });
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -143,3 +143,23 @@ export interface PublishDestination {
   scopes: string;
   created_at: string;
 }
+
+export interface PublishJob {
+  id: string;
+  project_id: string;
+  destination_id: string;
+  mode: 'create' | 'replace';
+  target_project_id: string | null;
+  label: string | null;
+  status: 'pending' | 'processing' | 'done' | 'failed';
+  progress_current: number;
+  progress_total: number;
+  progress_label: string | null;
+  result_project_id: string | null;
+  result_slug: string | null;
+  error: string | null;
+  state_json: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
