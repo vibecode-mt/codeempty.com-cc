@@ -2,8 +2,6 @@ import type { Env, Project, ProjectStep, ContentElement, CommonScript } from '..
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElement } from './content';
 
-// Pull tags with the given prefix (e.g. `step:` / `element:`) and strip the prefix.
-//   ["step:major","youtube"] with prefix "step:" → ["major"]
 function pickNamespacedTags(tags: string | null, prefix: string): string[] {
   if (!tags) return [];
   const out: string[] = [];
@@ -12,6 +10,26 @@ function pickNamespacedTags(tags: string | null, prefix: string): string[] {
     if (t.startsWith(prefix)) out.push(t.slice(prefix.length));
   }
   return out;
+}
+
+function extractYoutubeId(url: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function youtubeLinkAt(id: string, ms: number): string {
+  return `https://youtu.be/${id}?t=${Math.floor(ms / 1000)}s`;
+}
+
+function formatTs(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
 interface SlideshowImage {
@@ -36,6 +54,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   if (!project) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
 
   const scripts = scriptsResult.results;
+  const youtubeId = extractYoutubeId(project.youtube_url);
 
   const stepsResult = await env.DB.prepare(
     'SELECT * FROM project_steps WHERE project_id = ? AND hidden = 0 ORDER BY sort_order ASC',
@@ -45,8 +64,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 
   const steps = stepsResult.results;
 
-  // Batch all elements in one query — a 30-step project was firing 31 D1 reads
-  // on every cold render before the KV cache warmed.
+  // Batch all elements in one query.
   const elementsByStep = new Map<string, ContentElement[]>();
   if (steps.length > 0) {
     const placeholders = steps.map(() => '?').join(',');
@@ -63,21 +81,20 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     }
   }
 
-  // Collect filter tag namespaces. step:X tags filter steps; element:Y filter elements.
   const stepFilterTags = new Set<string>();
   const elementFilterTags = new Set<string>();
-
-  // Anchor id per step
   const stepAnchor = (i: number) => `step-${i + 1}`;
-
-  // Many-step heuristic: collapse all but the first when there are >5 steps.
   const collapseAll = steps.length > 5;
-
-  // Slideshow image collection — built up as we walk elements.
   const slideshowImages: SlideshowImage[] = [];
 
   const stepHtml: string[] = [];
   const tocItems: string[] = [];
+
+  // Render a small ▶ link if the project has a youtube URL and the row has a timestamp
+  const ytBadge = (ms: number | null): string => {
+    if (ms == null || !youtubeId) return '';
+    return `<a class="yt-link" href="${youtubeLinkAt(youtubeId, ms)}" target="_blank" rel="noopener noreferrer" title="Open at ${formatTs(ms)} on YouTube">▶ ${formatTs(ms)}</a>`;
+  };
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -89,7 +106,6 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       const elTags = pickNamespacedTags(el.tags, 'element:');
       for (const t of elTags) elementFilterTags.add(t);
 
-      // Pull image data for the slideshow
       if (el.type === 'image') {
         try {
           const parsed = JSON.parse(el.content) as { url?: string; caption?: string };
@@ -106,7 +122,13 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       }
 
       const dataAttr = elTags.length > 0 ? ` data-el-tags="${escHtml(elTags.join(','))}"` : '';
-      return `<div class="content-el-wrap"${dataAttr}>${renderContentElement(el)}</div>`;
+      const tsBadge = ytBadge(el.video_timestamp_ms);
+      const inner = renderContentElement(el);
+      // Position the ts badge inline with element content; CSS pulls it to the right
+      const wrapped = tsBadge
+        ? `<div class="content-el-with-ts">${inner}<div class="content-el-ts">${tsBadge}</div></div>`
+        : inner;
+      return `<div class="content-el-wrap"${dataAttr}>${wrapped}</div>`;
     }).join('');
 
     const elementCount = elements.length;
@@ -118,12 +140,14 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     const stepDataAttr = stepTags.length > 0 ? ` data-step-tags="${escHtml(stepTags.join(','))}"` : '';
     const open = !collapseAll || i === 0 ? ' open' : '';
     const anchor = stepAnchor(i);
+    const stepTsBadge = ytBadge(step.video_timestamp_ms);
 
     stepHtml.push(
       `<details class="step" id="${anchor}"${stepDataAttr}${open} data-step-title="${escHtml(step.title.toLowerCase())}">
         <summary class="step-summary">
           <span class="step-num">${i + 1}.</span>
           <span class="step-title-text">${escHtml(step.title)}</span>
+          ${stepTsBadge}
           ${summaryMeta}
         </summary>
         <div class="step-body">${elementHtml}</div>
@@ -136,7 +160,6 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     );
   }
 
-  // Filter chip rows. Only render when tags actually exist.
   const stepFilterRow = stepFilterTags.size > 0
     ? `<div class="filter-row" data-filter-scope="step">
         <span class="filter-label">Steps:</span>
@@ -173,6 +196,10 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     ? `<button type="button" class="slideshow-trigger">🎞 Slideshow (${slideshowImages.length})</button>`
     : '';
 
+  const youtubeButton = youtubeId
+    ? `<a class="yt-watch-btn" href="https://youtu.be/${youtubeId}" target="_blank" rel="noopener noreferrer" title="Watch on YouTube">▶ Watch on YouTube</a>`
+    : '';
+
   const slideshowJsonScript = slideshowImages.length > 0
     ? `<script type="application/json" id="slideshow-data">${JSON.stringify(slideshowImages).replace(/</g, '\\u003c')}</script>`
     : '';
@@ -196,9 +223,10 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
         </div>
         <div class="ss-stage">
           <button class="ss-prev" type="button" aria-label="Previous">‹</button>
-          <img class="ss-img" alt="">
+          <img class="ss-img" alt="" title="Click to pause / resume">
           <button class="ss-next" type="button" aria-label="Next">›</button>
         </div>
+        <input class="ss-progress" type="range" min="0" max="${slideshowImages.length - 1}" step="1" value="0" aria-label="Slide progress">
         <div class="ss-caption"></div>
       </div>`
     : '';
@@ -210,8 +238,6 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     slideshowImages.length > 0 ||
     steps.length > 5;
 
-  // Single inline script for filters, search, TOC behavior, and slideshow.
-  // Keeps everything client-side; static HTML still works for non-JS readers.
   const inlineScript = needsScript
     ? `<script>(function(){
   function $(sel,root){return (root||document).querySelector(sel);}
@@ -275,6 +301,10 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       if(t&&t.tagName==='DETAILS')t.open=true;
     });
   });
+  // Don't let the YouTube link inside a <summary> toggle the <details>
+  $$('.step-summary .yt-link').forEach(function(a){
+    a.addEventListener('click',function(e){e.stopPropagation();});
+  });
   var ea=$('#toc-expand-all');
   if(ea)ea.addEventListener('click',function(){$$('details.step').forEach(function(d){d.open=true;});});
   var ca=$('#toc-collapse-all');
@@ -291,6 +321,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     var caption=$('.ss-caption',modal);
     var playBtn=$('.ss-play',modal);
     var intervalSelect=$('.ss-interval',modal);
+    var progress=$('.ss-progress',modal);
     var idx=0,playing=false,timer=null;
     function show(){
       if(images.length===0)return;
@@ -300,6 +331,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       counter.textContent=(idx+1)+' / '+images.length;
       stepLabel.textContent='— '+im.stepTitle;
       caption.textContent=im.caption||'';
+      progress.value=String(idx);
     }
     function next(){idx++;show();}
     function prev(){idx--;show();}
@@ -308,13 +340,15 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       timer=setInterval(next,parseInt(intervalSelect.value,10));
     }
     function stopTimer(){if(timer){clearInterval(timer);timer=null;}}
-    function togglePlay(){
-      playing=!playing;
+    function setPlaying(p){
+      playing=p;
       playBtn.textContent=playing?'⏸ Pause':'▶ Play';
+      img.classList.toggle('ss-img-playing',playing);
       if(playing)startTimer();else stopTimer();
     }
+    function togglePlay(){setPlaying(!playing);}
     function open(at){idx=at||0;show();modal.hidden=false;document.body.style.overflow='hidden';}
-    function close(){modal.hidden=true;stopTimer();playing=false;playBtn.textContent='▶ Play';document.body.style.overflow='';}
+    function close(){modal.hidden=true;setPlaying(false);document.body.style.overflow='';}
     $$('.slideshow-trigger').forEach(function(b){
       b.addEventListener('click',function(){open(0);});
     });
@@ -322,7 +356,13 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     $('.ss-next',modal).addEventListener('click',next);
     $('.ss-close',modal).addEventListener('click',close);
     playBtn.addEventListener('click',togglePlay);
+    img.addEventListener('click',togglePlay);
     intervalSelect.addEventListener('change',function(){if(playing)startTimer();});
+    progress.addEventListener('input',function(){
+      idx=parseInt(progress.value,10);
+      show();
+      if(playing)startTimer(); // restart the interval so the user-chosen slide gets full duration
+    });
     document.addEventListener('keydown',function(e){
       if(modal.hidden)return;
       if(e.key==='Escape')close();
@@ -330,7 +370,6 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       else if(e.key==='ArrowRight')next();
       else if(e.key===' '){e.preventDefault();togglePlay();}
     });
-    // Click an image in the article to open the slideshow at that image
     $$('.content-el-img img').forEach(function(im){
       im.style.cursor='zoom-in';
       im.addEventListener('click',function(){
@@ -343,12 +382,30 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 })();</script>`
     : '';
 
+  // Hero block: full-bleed cover image with title overlay; falls back to a
+  // clean text-only header when no cover image is set.
+  const hero = project.image_url
+    ? `<header class="project-hero project-hero-image">
+        <img class="project-hero-img" src="${escHtml(project.image_url)}" alt="" decoding="async">
+        <div class="project-hero-overlay">
+          <a class="project-hero-back" href="/">← Projects</a>
+          <h1 class="project-hero-title">${escHtml(project.title)}</h1>
+          ${project.description ? `<p class="project-hero-subtitle">${project.description}</p>` : ''}
+        </div>
+      </header>`
+    : `<header class="project-hero project-hero-text">
+        <a class="project-hero-back" href="/">← Projects</a>
+        <h1 class="project-hero-title-plain">${escHtml(project.title)}</h1>
+        ${project.description ? `<p class="page-subtitle">${project.description}</p>` : ''}
+      </header>`;
+
+  const toolsBar = (searchBox || slideshowButton || youtubeButton)
+    ? `<div class="page-tools">${searchBox}${slideshowButton}${youtubeButton}</div>`
+    : '';
+
   const body = `
-    <a class="back-link" href="/">&#8592; Back to Projects</a>
-    <h1 class="page-title">${escHtml(project.title)}</h1>
-    ${project.description ? `<p class="page-subtitle">${project.description}</p>` : ''}
-    ${project.image_url ? `<img src="${escHtml(project.image_url)}" alt="${escHtml(project.title)}" decoding="async" style="border-radius:.75rem;margin-bottom:2rem;max-height:400px;width:100%;object-fit:cover">` : ''}
-    ${(searchBox || slideshowButton) ? `<div class="page-tools">${searchBox}${slideshowButton}</div>` : ''}
+    ${hero}
+    ${toolsBar}
     ${tocBlock}
     ${stepFilterRow}
     ${elementFilterRow}

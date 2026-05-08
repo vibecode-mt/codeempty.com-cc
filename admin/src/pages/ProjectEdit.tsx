@@ -41,7 +41,7 @@ export default function ProjectEdit() {
   const navigate = useNavigate();
   const isNew = !id;
 
-  const [form, setForm] = useState({ title: '', slug: '', description: '', image_url: '', sort_order: 0, published: 1 });
+  const [form, setForm] = useState({ title: '', slug: '', description: '', image_url: '', youtube_url: '', sort_order: 0, published: 1 });
   const [steps, setSteps] = useState<ProjectStep[]>([]);
   const [stepContent, setStepContent] = useState<Record<string, ContentElement[]>>({});
   const [newStepTitle, setNewStepTitle] = useState('');
@@ -84,7 +84,7 @@ export default function ProjectEdit() {
   useEffect(() => {
     if (id) {
       api.getProject(id).then((p) => {
-        setForm({ title: p.title, slug: p.slug, description: p.description, image_url: p.image_url ?? '', sort_order: p.sort_order, published: p.published });
+        setForm({ title: p.title, slug: p.slug, description: p.description, image_url: p.image_url ?? '', youtube_url: p.youtube_url ?? '', sort_order: p.sort_order, published: p.published });
         setSteps(p.steps);
         setVideoKey(p.video_key ?? null);
       });
@@ -662,6 +662,20 @@ export default function ProjectEdit() {
           <div>
             <label className="block text-sm font-medium mb-1">Cover Image</label>
             <ImageUpload value={form.image_url} onChange={(url) => setForm((f) => ({ ...f, image_url: url }))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              YouTube URL <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+              value={form.youtube_url}
+              onChange={(e) => setForm((f) => ({ ...f, youtube_url: e.target.value }))}
+              placeholder="https://www.youtube.com/watch?v=..."
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              When set, every step/element with a video timestamp gets a ▶ link that opens the YouTube video at that exact second.
+            </p>
           </div>
           <div className="flex items-center gap-4">
             <div>

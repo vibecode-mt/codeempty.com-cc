@@ -29,10 +29,10 @@ projectRoutes.post('/', requireSession, async (c) => {
   const ts = now();
 
   await c.env.DB.prepare(
-    `INSERT INTO projects (id, slug, title, description, image_url, video_key, video_url, sort_order, published, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO projects (id, slug, title, description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, slug, body.title, body.description ?? '', body.image_url ?? null, body.video_key ?? null, body.video_url ?? null, body.sort_order ?? 0, body.published ?? 1, ts, ts)
+    .bind(id, slug, body.title, body.description ?? '', body.image_url ?? null, body.video_key ?? null, body.video_url ?? null, body.youtube_url?.trim() || null, body.sort_order ?? 0, body.published ?? 1, ts, ts)
     .run();
 
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
@@ -65,7 +65,7 @@ projectRoutes.put('/:id', requireSession, async (c) => {
   const slug = body.slug?.trim() || existing.slug?.trim() || slugify(resolvedTitle);
   const ts = now();
   await c.env.DB.prepare(
-    `UPDATE projects SET slug=?, title=?, description=?, image_url=?, video_key=?, video_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+    `UPDATE projects SET slug=?, title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
   )
     .bind(
       slug,
@@ -74,6 +74,7 @@ projectRoutes.put('/:id', requireSession, async (c) => {
       body.image_url ?? existing.image_url,
       'video_key' in body ? (body.video_key ?? null) : existing.video_key,
       'video_url' in body ? (body.video_url ?? null) : existing.video_url,
+      'youtube_url' in body ? (body.youtube_url?.trim() || null) : existing.youtube_url,
       body.sort_order ?? existing.sort_order,
       body.published ?? existing.published,
       ts,

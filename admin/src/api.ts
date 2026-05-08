@@ -169,6 +169,7 @@ export interface Project {
   id: string; slug: string; title: string; description: string;
   image_url: string | null;
   video_key: string | null; video_url: string | null;
+  youtube_url: string | null;
   sort_order: number; published: number;
   created_at: string; updated_at: string;
 }
