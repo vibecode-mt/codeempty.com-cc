@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { uuid } from '../utils';
-import { requireSession } from './middleware';
+import { requireSession, requireSessionOrOAuthWithScope } from './middleware';
 
 export const mediaRoutes = new Hono<{ Bindings: Env }>();
 
-// Standard image upload (small files)
-mediaRoutes.post('/upload', requireSession, async (c) => {
+// Standard image upload (small files). Accepts session OR an OAuth bearer with
+// 'write' scope so cross-instance publish flows can re-upload media against
+// the destination without holding a session cookie.
+mediaRoutes.post('/upload', requireSessionOrOAuthWithScope('write'), async (c) => {
   const formData = await c.req.formData();
   const file = formData.get('file') as File | null;
   if (!file) return c.json({ error: 'No file provided' }, 400);

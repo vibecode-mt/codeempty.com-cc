@@ -14,6 +14,7 @@ import BulkDeleteModal from '../components/BulkDeleteModal';
 import BulkTagModal from '../components/BulkTagModal';
 import VersionsModal from '../components/VersionsModal';
 import ImportBundleModal from '../components/ImportBundleModal';
+import PublishModal from '../components/PublishModal';
 import { buildBundle, downloadBlob, type BundleProgress } from '../lib/bundle';
 import TagsEditor from '../components/TagsEditor';
 
@@ -80,6 +81,7 @@ export default function ProjectEdit() {
   const [showBulkTag, setShowBulkTag] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [showImportBundle, setShowImportBundle] = useState(false);
+  const [showPublish, setShowPublish] = useState(false);
   const [exporting, setExporting] = useState<BundleProgress | null>(null);
   const [exportError, setExportError] = useState('');
   // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
@@ -654,6 +656,14 @@ export default function ProjectEdit() {
           >
             📥 Import bundle
           </button>
+          <button
+            onClick={() => setShowPublish(true)}
+            disabled={!pid}
+            className="px-4 py-2 bg-fuchsia-600 text-white text-sm rounded-lg hover:bg-fuchsia-700 shrink-0 disabled:opacity-40"
+            title="Publish this project to a remote CMS destination"
+          >
+            🚀 Publish
+          </button>
         </div>
         {exporting && (
           <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-900 flex items-center gap-3">
@@ -836,6 +846,16 @@ export default function ProjectEdit() {
             }
             setStepContent(map);
           }}
+        />
+      )}
+
+      {/* Publish modal */}
+      {pid && (
+        <PublishModal
+          projectId={pid}
+          projectTitle={form.title || pid}
+          isOpen={showPublish}
+          onClose={() => setShowPublish(false)}
         />
       )}
 
