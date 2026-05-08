@@ -1018,6 +1018,257 @@ function collectMediaKeys(project: Project, elements: ContentElement[]): string[
   return Array.from(keys);
 }
 
+// Find a slug that doesn't already exist by appending -2, -3, …
+async function uniqueSlug(env: Env, baseSlug: string): Promise<string> {
+  let candidate = baseSlug;
+  let n = 2;
+  // Cap iterations to avoid pathological loops; ~50 is enough in practice.
+  while (n < 100) {
+    const existing = await env.DB.prepare('SELECT 1 FROM projects WHERE slug = ?')
+      .bind(candidate)
+      .first();
+    if (!existing) return candidate;
+    candidate = `${baseSlug}-${n}`;
+    n++;
+  }
+  return `${baseSlug}-${uuid().slice(0, 8)}`;
+}
+
+// Import a snapshot into the database. Generates new uuids for project, steps,
+// elements (cross-instance import never trusts the source's ids). For replace
+// mode, preserves the target's id and slug; auto-snapshots target first.
+//
+// Returns the resulting project_id (= targetProjectId for replace, new for
+// create) and the slug. The whole effect is one atomic D1 batch.
+async function importSnapshot(
+  env: Env,
+  payload: SnapshotShape,
+  opts: {
+    mode: 'create' | 'replace';
+    targetProjectId?: string;
+    label?: string | null;
+    createdBy: string | null;
+  },
+): Promise<{ project_id: string; slug: string; version_id?: string }> {
+  const ts = now();
+
+  // Decide the destination project id + slug
+  let destProjectId: string;
+  let destSlug: string;
+  let preSnapshotId: string | undefined;
+
+  if (opts.mode === 'replace') {
+    if (!opts.targetProjectId) throw new Error('target_project_id is required for replace mode');
+    const target = await env.DB.prepare('SELECT id, slug FROM projects WHERE id = ?')
+      .bind(opts.targetProjectId)
+      .first<{ id: string; slug: string }>();
+    if (!target) throw new Error(`Target project ${opts.targetProjectId} not found`);
+    destProjectId = target.id;
+    destSlug = target.slug; // keep the existing slug — inbound links and KV cache key stay valid
+    // Auto-snapshot target before replacing.
+    const pre = await snapshotProjectToVersions(
+      env,
+      destProjectId,
+      'import-replace',
+      opts.label ?? 'Before import-replace',
+      opts.createdBy,
+    );
+    preSnapshotId = pre.id;
+  } else {
+    destProjectId = uuid();
+    const baseSlug = payload.project.slug?.trim() || slugify(payload.project.title);
+    destSlug = await uniqueSlug(env, baseSlug);
+  }
+
+  // Remap step ids and reparent elements.
+  const stepIdMap = new Map<string, string>();
+  const newSteps = payload.steps.map((s) => {
+    const newId = uuid();
+    stepIdMap.set(s.id, newId);
+    return { ...s, id: newId, project_id: destProjectId };
+  });
+  const newElements = payload.elements.map((e) => {
+    const newParentId = e.parent_type === 'project_step'
+      ? (stepIdMap.get(e.parent_id) ?? e.parent_id)
+      : e.parent_id;
+    return { ...e, id: uuid(), parent_id: newParentId };
+  });
+
+  // Build the atomic batch.
+  const stmts: D1PreparedStatement[] = [];
+
+  if (opts.mode === 'replace') {
+    // Wipe existing children of the target project before re-inserting.
+    const existing = await env.DB.prepare('SELECT id FROM project_steps WHERE project_id = ?')
+      .bind(destProjectId)
+      .all<{ id: string }>();
+    const existingIds = existing.results.map((r) => r.id);
+    if (existingIds.length > 0) {
+      const ph = existingIds.map(() => '?').join(',');
+      stmts.push(
+        env.DB
+          .prepare(`DELETE FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${ph})`)
+          .bind(...existingIds),
+      );
+    }
+    stmts.push(env.DB.prepare('DELETE FROM project_steps WHERE project_id = ?').bind(destProjectId));
+    // UPDATE the existing project row with imported metadata; id+slug preserved.
+    const p = payload.project;
+    stmts.push(
+      env.DB
+        .prepare(
+          `UPDATE projects SET title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+        )
+        .bind(
+          p.title,
+          p.description,
+          p.image_url,
+          p.video_key,
+          p.video_url,
+          p.youtube_url ?? null,
+          p.sort_order,
+          p.published,
+          ts,
+          destProjectId,
+        ),
+    );
+  } else {
+    const p = payload.project;
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO projects (id, slug, title, description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          destProjectId,
+          destSlug,
+          p.title,
+          p.description ?? '',
+          p.image_url ?? null,
+          p.video_key ?? null,
+          p.video_url ?? null,
+          p.youtube_url ?? null,
+          p.sort_order ?? 0,
+          p.published ?? 1,
+          ts,
+          ts,
+        ),
+    );
+  }
+
+  for (const s of newSteps) {
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO project_steps (id, project_id, title, sort_order, video_timestamp_ms, tags, hidden, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(s.id, s.project_id, s.title, s.sort_order, s.video_timestamp_ms, s.tags, s.hidden ?? 0, ts, ts),
+    );
+  }
+  for (const e of newElements) {
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, render_style, hidden, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          e.id,
+          e.parent_type,
+          e.parent_id,
+          e.type,
+          e.content,
+          e.sort_order,
+          e.video_timestamp_ms,
+          e.tags,
+          e.render_style,
+          e.hidden ?? 0,
+          ts,
+          ts,
+        ),
+    );
+  }
+
+  await env.DB.batch(stmts);
+  await invalidateProjectCache(env, destSlug);
+  if (opts.mode === 'create') {
+    // Home page lists all projects; invalidate too.
+    await env.PAGES_KV.delete('home');
+  }
+
+  return { project_id: destProjectId, slug: destSlug, version_id: preSnapshotId };
+}
+
+projectRoutes.post(
+  '/import',
+  requireSessionOrOAuthWithScope('write'),
+  async (c) => {
+    const body = await c.req.json<{
+      manifest: { format_version: number };
+      project: Project;
+      steps: ProjectStep[];
+      elements: ContentElement[];
+      mode: 'create' | 'replace';
+      target_project_id?: string;
+      label?: string;
+      idempotency_key?: string;
+    }>();
+
+    if (!body.project || !Array.isArray(body.steps) || !Array.isArray(body.elements)) {
+      return c.json({ error: 'Missing required fields: project, steps, elements' }, 400);
+    }
+    if (body.mode !== 'create' && body.mode !== 'replace') {
+      return c.json({ error: 'mode must be "create" or "replace"' }, 400);
+    }
+    if (body.manifest?.format_version !== 1) {
+      return c.json({ error: `Unsupported bundle format: ${body.manifest?.format_version}` }, 400);
+    }
+
+    const userId = (c.get('userId' as never) as string | null) ?? null;
+
+    // Idempotency replay: if we've already processed this key successfully,
+    // return the cached response.
+    if (body.idempotency_key) {
+      const cached = await c.env.DB
+        .prepare('SELECT response_json FROM idempotency_log WHERE key = ?')
+        .bind(body.idempotency_key)
+        .first<{ response_json: string }>();
+      if (cached) {
+        return c.json(JSON.parse(cached.response_json));
+      }
+    }
+
+    try {
+      const result = await importSnapshot(c.env, {
+        format_version: 1,
+        project: body.project,
+        steps: body.steps,
+        elements: body.elements,
+      }, {
+        mode: body.mode,
+        targetProjectId: body.target_project_id,
+        label: body.label ?? null,
+        createdBy: userId,
+      });
+
+      if (body.idempotency_key) {
+        await c.env.DB
+          .prepare(
+            'INSERT OR IGNORE INTO idempotency_log (key, user_id, endpoint, response_json) VALUES (?, ?, ?, ?)',
+          )
+          .bind(body.idempotency_key, userId ?? '<oauth>', '/api/projects/import', JSON.stringify(result))
+          .run();
+      }
+
+      return c.json(result, 201);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  },
+);
+
 projectRoutes.get('/:id/export-data', requireSession, async (c) => {
   const projectId = c.req.param('id');
   let snapshot: SnapshotShape;

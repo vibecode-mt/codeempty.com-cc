@@ -55,6 +55,19 @@ export const api = {
   exportData: (projectId: string) =>
     req<ExportData>('GET', `/projects/${projectId}/export-data`),
 
+  // Bundle import — browser ships rewritten payload after re-uploading media
+  importBundle: (body: {
+    manifest: BundleManifest;
+    project: Project;
+    steps: ProjectStep[];
+    elements: ContentElement[];
+    mode: 'create' | 'replace';
+    target_project_id?: string;
+    label?: string;
+    idempotency_key?: string;
+  }) =>
+    req<{ project_id: string; slug: string; version_id?: string }>('POST', '/projects/import', body),
+
   // Project versioning
   listVersions: (projectId: string) =>
     req<ProjectVersionSummary[]>('GET', `/projects/${projectId}/versions`),

@@ -13,6 +13,7 @@ import ExportSrtModal from '../components/ExportSrtModal';
 import BulkDeleteModal from '../components/BulkDeleteModal';
 import BulkTagModal from '../components/BulkTagModal';
 import VersionsModal from '../components/VersionsModal';
+import ImportBundleModal from '../components/ImportBundleModal';
 import { buildBundle, downloadBlob, type BundleProgress } from '../lib/bundle';
 import TagsEditor from '../components/TagsEditor';
 
@@ -78,6 +79,7 @@ export default function ProjectEdit() {
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [showBulkTag, setShowBulkTag] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [showImportBundle, setShowImportBundle] = useState(false);
   const [exporting, setExporting] = useState<BundleProgress | null>(null);
   const [exportError, setExportError] = useState('');
   // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
@@ -645,6 +647,13 @@ export default function ProjectEdit() {
           >
             📦 Export bundle
           </button>
+          <button
+            onClick={() => setShowImportBundle(true)}
+            className="px-4 py-2 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 shrink-0"
+            title="Upload a .codeempty file to create a new project or replace this one"
+          >
+            📥 Import bundle
+          </button>
         </div>
         {exporting && (
           <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded text-sm text-emerald-900 flex items-center gap-3">
@@ -829,6 +838,34 @@ export default function ProjectEdit() {
           }}
         />
       )}
+
+      {/* Import bundle modal — works whether we're on a new or existing project */}
+      <ImportBundleModal
+        currentProjectId={pid ?? null}
+        isOpen={showImportBundle}
+        onClose={() => setShowImportBundle(false)}
+        onImported={(newProjectId) => {
+          if (newProjectId === pid) {
+            // Replaced the current project; reload its content in place.
+            api.getProject(newProjectId).then((updated) => {
+              setForm({
+                title: updated.title,
+                slug: updated.slug,
+                description: updated.description,
+                image_url: updated.image_url ?? '',
+                youtube_url: updated.youtube_url ?? '',
+                sort_order: updated.sort_order,
+                published: updated.published,
+              });
+              setSteps(updated.steps);
+              setStepContent({});
+            });
+          } else {
+            // Created a new project; navigate to its edit page.
+            navigate(`/projects/${newProjectId}`);
+          }
+        }}
+      />
 
       {/* Versions modal */}
       {pid && (
