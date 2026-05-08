@@ -46,6 +46,8 @@ export default function ProjectEdit() {
   const isNew = !id;
 
   const [form, setForm] = useState({ title: '', slug: '', description: '', image_url: '', youtube_url: '', sort_order: 0, published: 1 });
+  // Read-only display: shown in the metadata card footer, never sent on save.
+  const [timestamps, setTimestamps] = useState<{ created_at: string | null; updated_at: string | null }>({ created_at: null, updated_at: null });
   const [steps, setSteps] = useState<ProjectStep[]>([]);
   const [stepContent, setStepContent] = useState<Record<string, ContentElement[]>>({});
   const [newStepTitle, setNewStepTitle] = useState('');
@@ -94,6 +96,7 @@ export default function ProjectEdit() {
     if (id) {
       api.getProject(id).then((p) => {
         setForm({ title: p.title, slug: p.slug, description: p.description, image_url: p.image_url ?? '', youtube_url: p.youtube_url ?? '', sort_order: p.sort_order, published: p.published });
+        setTimestamps({ created_at: p.created_at, updated_at: p.updated_at });
         setSteps(p.steps);
         setVideoKey(p.video_key ?? null);
       });
@@ -202,9 +205,11 @@ export default function ProjectEdit() {
       if (isNew) {
         const created = await api.createProject(form as Partial<Project>);
         setProjectId(created.id);
+        setTimestamps({ created_at: created.created_at, updated_at: created.updated_at });
         navigate(`/projects/${created.id}`, { replace: true });
       } else {
-        await api.updateProject(id!, form as Partial<Project>);
+        const updated = await api.updateProject(id!, form as Partial<Project>);
+        setTimestamps({ created_at: updated.created_at, updated_at: updated.updated_at });
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -754,9 +759,21 @@ export default function ProjectEdit() {
             </div>
           </div>
           {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
-            {saving ? 'Saving…' : saved ? '✓ Saved' : isNew ? 'Create Project' : 'Save Changes'}
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              {saving ? 'Saving…' : saved ? '✓ Saved' : isNew ? 'Create Project' : 'Save Changes'}
+            </button>
+            {!isNew && (timestamps.created_at || timestamps.updated_at) && (
+              <span className="text-xs text-gray-500">
+                {timestamps.created_at && (
+                  <>Created {new Date(timestamps.created_at.replace(' ', 'T') + 'Z').toLocaleString()}</>
+                )}
+                {timestamps.created_at && timestamps.updated_at && timestamps.created_at !== timestamps.updated_at && (
+                  <> · Updated {new Date(timestamps.updated_at!.replace(' ', 'T') + 'Z').toLocaleString()}</>
+                )}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </div>

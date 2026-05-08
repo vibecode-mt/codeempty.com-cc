@@ -153,6 +153,7 @@ img{max-width:100%;height:auto;display:block}
 .project-hero-text .project-hero-back:hover{color:#1f2937;text-decoration:underline}
 .project-hero-title-plain{font-size:clamp(1.6rem,4vw,2.25rem);font-weight:700;margin:0 0 .75rem;letter-spacing:-.01em}
 @media(max-width:640px){.project-hero{margin-left:-1.5rem;margin-right:-1.5rem}.project-hero-overlay{padding:1rem 1.25rem}}
+.project-dates{font-size:.8rem;color:#6b7280;margin-bottom:1rem;letter-spacing:.01em}
 .project-description{margin-bottom:1.5rem;font-size:1rem;color:#374151;line-height:1.65}
 .project-description-text{overflow:hidden}
 .project-description[data-collapsed="true"] .project-description-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}

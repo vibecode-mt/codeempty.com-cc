@@ -32,6 +32,14 @@ function formatTs(ms: number): string {
     : `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+// "May 8, 2026" — small, human-readable. Input is "YYYY-MM-DD HH:MM:SS" (UTC).
+function formatDate(s: string | null | undefined): string {
+  if (!s) return '';
+  const d = new Date(s.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 interface SlideshowImage {
   url: string;
   caption: string;
@@ -509,6 +517,13 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
         <h1 class="project-hero-title-plain">${escHtml(project.title)}</h1>
       </header>`;
 
+  // Posted/updated timestamps. Suppress "Updated" when it equals "Posted".
+  const postedDate = formatDate(project.created_at);
+  const updatedDate = formatDate(project.updated_at);
+  const datesLine = postedDate
+    ? `<div class="project-dates">Posted ${postedDate}${updatedDate && updatedDate !== postedDate ? ` · Updated ${updatedDate}` : ''}</div>`
+    : '';
+
   // Collapsible description: clamps to a few lines initially, "more" link
   // expands. Inline JS removes the link when the text is short enough to fit.
   const descriptionBlock = project.description
@@ -524,6 +539,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
 
   const body = `
     ${hero}
+    ${datesLine}
     ${descriptionBlock}
     ${toolsBar}
     ${tocBlock}
