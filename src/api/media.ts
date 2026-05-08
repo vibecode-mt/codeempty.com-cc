@@ -23,6 +23,17 @@ mediaRoutes.post('/upload', requireSessionOrOAuthWithScope('write'), async (c) =
   return c.json({ key, url: `/api/media/${key}` }, 201);
 });
 
+// Verify the requesting user owns this multipart upload (i.e. they're the
+// session that called /init for this uploadId+key). Without this, any
+// authenticated user could push parts into someone else's upload.
+async function ownsUpload(env: Env, uploadId: string, key: string, userId: string): Promise<boolean> {
+  const row = await env.DB
+    .prepare('SELECT user_id FROM upload_sessions WHERE upload_id = ? AND r2_key = ?')
+    .bind(uploadId, key)
+    .first<{ user_id: string }>();
+  return !!row && row.user_id === userId;
+}
+
 // Chunked video upload — init
 mediaRoutes.post('/upload/video/init', requireSession, async (c) => {
   const { filename, contentType } = await c.req.json<{ filename: string; contentType: string }>();
@@ -34,6 +45,12 @@ mediaRoutes.post('/upload/video/init', requireSession, async (c) => {
     httpMetadata: { contentType },
   });
 
+  const userId = (c.get('userId' as never) as string | undefined) ?? '';
+  await c.env.DB
+    .prepare('INSERT INTO upload_sessions (upload_id, r2_key, user_id, purpose) VALUES (?, ?, ?, ?)')
+    .bind(upload.uploadId, key, userId, 'media')
+    .run();
+
   return c.json({ uploadId: upload.uploadId, key });
 });
 
@@ -43,6 +60,11 @@ mediaRoutes.post('/upload/video/chunk', requireSession, async (c) => {
   const uploadId = c.req.query('uploadId');
   const partNumber = Number(c.req.query('partNumber'));
   if (!key || !uploadId || !partNumber) return c.json({ error: 'key, uploadId, and partNumber are required' }, 400);
+
+  const userId = (c.get('userId' as never) as string | undefined) ?? '';
+  if (!(await ownsUpload(c.env, uploadId, key, userId))) {
+    return c.json({ error: 'Not the owner of this upload session' }, 403);
+  }
 
   const upload = c.env.MEDIA.resumeMultipartUpload(key, uploadId);
   const part = await upload.uploadPart(partNumber, c.req.raw.body!);
@@ -59,8 +81,20 @@ mediaRoutes.post('/upload/video/complete', requireSession, async (c) => {
   }>();
   if (!key || !uploadId || !parts) return c.json({ error: 'key, uploadId, and parts are required' }, 400);
 
+  const userId = (c.get('userId' as never) as string | undefined) ?? '';
+  if (!(await ownsUpload(c.env, uploadId, key, userId))) {
+    return c.json({ error: 'Not the owner of this upload session' }, 403);
+  }
+
   const upload = c.env.MEDIA.resumeMultipartUpload(key, uploadId);
   await upload.complete(parts);
+
+  // Drop the ownership row — the multipart session is gone so no one will
+  // call chunk/complete with this id again.
+  await c.env.DB
+    .prepare('DELETE FROM upload_sessions WHERE upload_id = ? AND r2_key = ?')
+    .bind(uploadId, key)
+    .run();
 
   return c.json({ key, url: `/api/media/${key}` }, 201);
 });
@@ -71,8 +105,18 @@ mediaRoutes.delete('/upload/video/abort', requireSession, async (c) => {
   const uploadId = c.req.query('uploadId');
   if (!key || !uploadId) return c.json({ error: 'key and uploadId are required' }, 400);
 
+  const userId = (c.get('userId' as never) as string | undefined) ?? '';
+  if (!(await ownsUpload(c.env, uploadId, key, userId))) {
+    return c.json({ error: 'Not the owner of this upload session' }, 403);
+  }
+
   const upload = c.env.MEDIA.resumeMultipartUpload(key, uploadId);
   await upload.abort();
+
+  await c.env.DB
+    .prepare('DELETE FROM upload_sessions WHERE upload_id = ? AND r2_key = ?')
+    .bind(uploadId, key)
+    .run();
 
   return c.json({ ok: true });
 });
