@@ -12,6 +12,7 @@ import { mediaRoutes } from './media';
 import { cacheRoutes } from './cache';
 import { destinationRoutes } from './destinations';
 import { publishRoutes } from './publish';
+import { contactRoutes } from './contact';
 
 export const app = new Hono<{ Bindings: Env }>().basePath('/api');
 
@@ -28,6 +29,7 @@ app.route('/media', mediaRoutes);
 app.route('/cache', cacheRoutes);
 app.route('/destinations', destinationRoutes);
 app.route('/publish', publishRoutes);
+app.route('/contact', contactRoutes);
 
 app.get('/health', (c) => c.json({ ok: true }));
 

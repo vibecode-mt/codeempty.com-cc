@@ -25,17 +25,18 @@ function parseUserComment(content: string): { text: string; username: string; pr
   }
 }
 
-type WidgetKind = 'project_list' | 'blog_list';
+type WidgetKind = 'project_list' | 'blog_list' | 'contact';
 
 const WIDGET_OPTIONS: { value: WidgetKind; label: string; help: string }[] = [
   { value: 'project_list', label: 'Project list', help: 'Renders the published projects as a card grid (like the home page).' },
   { value: 'blog_list', label: 'Blog list', help: 'Renders published blog entries grouped by date.' },
+  { value: 'contact', label: 'Contact form', help: 'Renders the configurable contact form from Settings → Contact Form.' },
 ];
 
 function parseWidgetKind(content: string): WidgetKind {
   try {
     const parsed = JSON.parse(content) as { kind?: string };
-    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list') return parsed.kind;
+    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list' || parsed.kind === 'contact') return parsed.kind;
   } catch {
     /* fall through */
   }

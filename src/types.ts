@@ -99,9 +99,68 @@ export type ContentElementType =
 export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export type ParentType = 'project_step' | 'page' | 'blog_entry';
 
-export type WidgetKind = 'project_list' | 'blog_list';
+export type WidgetKind = 'project_list' | 'blog_list' | 'contact';
 export interface WidgetContent {
   kind: WidgetKind;
+}
+
+export type ContactFieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox';
+export interface ContactFieldOption {
+  label: string;
+  value: string;
+}
+export interface ContactField {
+  key: string;
+  label: string;
+  type: ContactFieldType;
+  required: number;
+  placeholder?: string;
+  help_text?: string;
+  options?: ContactFieldOption[];
+}
+
+export type ContactCaptchaProvider = 'none' | 'turnstile' | 'recaptcha_v2' | 'recaptcha_v3';
+export interface ContactCaptchaConfig {
+  enabled: number;
+  provider: ContactCaptchaProvider;
+  site_key: string;
+  secret_key: string;
+  recaptcha_action?: string;
+  recaptcha_min_score?: number;
+}
+
+export type ContactDeliveryProvider = 'webhook' | 'smtp';
+export interface ContactDeliveryConfig {
+  provider: ContactDeliveryProvider;
+  to_email: string;
+  from_email: string;
+  webhook_url?: string;
+  webhook_auth_header?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_username?: string;
+  smtp_password?: string;
+  smtp_secure?: number;
+}
+
+export interface ContactFormSettings {
+  id: string;
+  fields_json: string;
+  captcha_json: string;
+  delivery_json: string;
+  submit_button_label: string;
+  success_message: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContactSubmission {
+  id: string;
+  source_page_slug: string | null;
+  payload_json: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
 }
 
 export interface ContentElement {
