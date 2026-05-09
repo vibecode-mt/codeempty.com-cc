@@ -1,6 +1,7 @@
-import type { ContentElement } from '../types';
+import type { ContentElement, Env } from '../types';
 import { escHtml } from './layout';
 import { renderMarkdown } from './markdown';
+import { renderWidgets } from './widgets';
 
 function youtubeId(urlOrId: string): string {
   const m = urlOrId.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -24,7 +25,7 @@ function renderDescriptionBody(content: string, style: string | null): { html: s
   }
 }
 
-export function renderContentElement(el: ContentElement): string {
+export function renderContentElement(el: ContentElement, widgets?: Map<string, string>): string {
   switch (el.type) {
     case 'title':
       return `<div class="content-el content-el-title">${escHtml(el.content)}</div>`;
@@ -93,11 +94,24 @@ export function renderContentElement(el: ContentElement): string {
         <div class="content-el-comment-body">${renderMarkdown(text)}</div>
       </div>`;
     }
+    case 'widget':
+      // Widgets need DB access; rendered in a pre-pass and looked up here.
+      return widgets?.get(el.id) ?? '';
     default:
       return '';
   }
 }
 
-export function renderContentElements(elements: ContentElement[]): string {
-  return elements.map(renderContentElement).join('');
+export function renderContentElements(elements: ContentElement[], widgets?: Map<string, string>): string {
+  return elements.map((el) => renderContentElement(el, widgets)).join('');
+}
+
+// Async helper used by page/blog/project renderers: pre-renders any widget
+// elements (which need D1) and returns the final HTML for the whole list.
+export async function renderContentElementsWithWidgets(
+  elements: ContentElement[],
+  env: Env,
+): Promise<string> {
+  const widgets = await renderWidgets(elements, env);
+  return renderContentElements(elements, widgets);
 }

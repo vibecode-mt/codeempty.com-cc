@@ -226,6 +226,7 @@ export interface ProjectStep {
 }
 export interface Page {
   id: string; slug: string; title: string; published: number; show_in_menu: number;
+  is_home: number;
   created_at: string; updated_at: string;
 }
 export interface BlogEntry {

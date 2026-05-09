@@ -72,6 +72,7 @@ export interface Page {
   title: string;
   published: number;
   show_in_menu: number;
+  is_home: number;
   created_at: string;
   updated_at: string;
 }
@@ -93,9 +94,15 @@ export type ContentElementType =
   | 'description'
   | 'url'
   | 'prompt_code'
-  | 'user_comment';
+  | 'user_comment'
+  | 'widget';
 export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export type ParentType = 'project_step' | 'page' | 'blog_entry';
+
+export type WidgetKind = 'project_list' | 'blog_list';
+export interface WidgetContent {
+  kind: WidgetKind;
+}
 
 export interface ContentElement {
   id: string;

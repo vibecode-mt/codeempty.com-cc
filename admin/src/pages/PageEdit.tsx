@@ -8,7 +8,7 @@ export default function PageEdit() {
   const navigate = useNavigate();
   const isNew = !id;
 
-  const [form, setForm] = useState({ title: '', slug: '', published: 1, show_in_menu: 0 });
+  const [form, setForm] = useState({ title: '', slug: '', published: 1, show_in_menu: 0, is_home: 0 });
   const [elements, setElements] = useState<ContentElement[]>([]);
   const [pageId, setPageId] = useState<string | null>(id ?? null);
   const [saving, setSaving] = useState(false);
@@ -18,7 +18,7 @@ export default function PageEdit() {
   useEffect(() => {
     if (id) {
       Promise.all([api.getPage(id), api.listContent('page', id)]).then(([p, els]) => {
-        setForm({ title: p.title, slug: p.slug, published: p.published, show_in_menu: p.show_in_menu });
+        setForm({ title: p.title, slug: p.slug, published: p.published, show_in_menu: p.show_in_menu, is_home: p.is_home });
         setElements(els);
       });
     }
@@ -70,6 +70,10 @@ export default function PageEdit() {
           <div className="flex items-center gap-2">
             <input type="checkbox" id="show_in_menu" checked={!!form.show_in_menu} onChange={(e) => setForm((f) => ({ ...f, show_in_menu: e.target.checked ? 1 : 0 }))} />
             <label htmlFor="show_in_menu" className="text-sm font-medium">Show in menu</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="is_home" checked={!!form.is_home} onChange={(e) => setForm((f) => ({ ...f, is_home: e.target.checked ? 1 : 0 }))} />
+            <label htmlFor="is_home" className="text-sm font-medium" title="Render this page at /. Only one page can be the home.">Home page</label>
           </div>
         </div>
         {error && <p className="text-red-500 text-sm">{error}</p>}

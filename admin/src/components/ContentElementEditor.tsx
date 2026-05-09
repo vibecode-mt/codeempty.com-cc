@@ -25,6 +25,27 @@ function parseUserComment(content: string): { text: string; username: string; pr
   }
 }
 
+type WidgetKind = 'project_list' | 'blog_list';
+
+const WIDGET_OPTIONS: { value: WidgetKind; label: string; help: string }[] = [
+  { value: 'project_list', label: 'Project list', help: 'Renders the published projects as a card grid (like the home page).' },
+  { value: 'blog_list', label: 'Blog list', help: 'Renders published blog entries grouped by date.' },
+];
+
+function parseWidgetKind(content: string): WidgetKind {
+  try {
+    const parsed = JSON.parse(content) as { kind?: string };
+    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list') return parsed.kind;
+  } catch {
+    /* fall through */
+  }
+  return 'project_list';
+}
+
+function stringifyWidget(kind: WidgetKind): string {
+  return JSON.stringify({ kind });
+}
+
 function stringifyUserComment(c: { text: string; username: string; profile_url: string; comment_url: string }): string {
   return JSON.stringify({
     text: c.text,
@@ -72,7 +93,7 @@ interface Props {
   manageTag?: string;
 }
 
-const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment'];
+const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment', 'widget'];
 
 export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame, manageTag }: Props) {
   const [adding, setAdding] = useState(false);
@@ -81,6 +102,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   const [urlLabel, setUrlLabel] = useState('');
   const [newRenderStyle, setNewRenderStyle] = useState<RenderStyle>('default');
   const [newComment, setNewComment] = useState({ text: '', username: '', profile_url: '', comment_url: '' });
+  const [newWidgetKind, setNewWidgetKind] = useState<WidgetKind>('project_list');
   const [error, setError] = useState('');
 
   // Drag state
@@ -99,6 +121,8 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
           return;
         }
         content = stringifyUserComment(newComment);
+      } else if (newType === 'widget') {
+        content = stringifyWidget(newWidgetKind);
       }
       const el = await api.createContent(parentType, parentId, {
         type: newType,
@@ -351,6 +375,21 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
                 onChange={(e) => setNewComment({ ...newComment, text: e.target.value })}
               />
             </div>
+          ) : newType === 'widget' ? (
+            <div className="space-y-2">
+              <select
+                value={newWidgetKind}
+                onChange={(e) => setNewWidgetKind(e.target.value as WidgetKind)}
+                className="w-full border rounded px-3 py-1.5 text-sm"
+              >
+                {WIDGET_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500">
+                {WIDGET_OPTIONS.find((o) => o.value === newWidgetKind)?.help}
+              </p>
+            </div>
           ) : (
             <textarea
               className="w-full border rounded px-3 py-1.5 text-sm resize-y font-mono"
@@ -427,6 +466,7 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
     let content = draft;
     if (el.type === 'url') content = JSON.stringify({ href: urlHref, label: urlLabel || urlHref });
     else if (el.type === 'user_comment') content = stringifyUserComment(comment);
+    else if (el.type === 'widget') content = stringifyWidget(parseWidgetKind(draft));
     await onUpdate(content);
     setEditing(false);
   }
@@ -441,6 +481,11 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
         } catch { return el.content; }
       })()
     : el.type === 'user_comment' ? (() => { const c = parseUserComment(el.content); return c.username ? `${c.username}: ${c.text.slice(0, 80)}` : c.text.slice(0, 100); })()
+    : el.type === 'widget' ? (() => {
+        const kind = parseWidgetKind(el.content);
+        const opt = WIDGET_OPTIONS.find((o) => o.value === kind);
+        return opt ? `Widget: ${opt.label}` : `Widget: ${kind}`;
+      })()
     : previewText(el.content, 200);
 
   const showRenderBadge = el.type === 'description' && el.render_style && el.render_style !== 'default';
@@ -602,6 +647,21 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
                 value={comment.text}
                 onChange={(e) => setComment({ ...comment, text: e.target.value })}
               />
+            </div>
+          ) : el.type === 'widget' ? (
+            <div className="space-y-2">
+              <select
+                value={parseWidgetKind(draft)}
+                onChange={(e) => setDraft(stringifyWidget(e.target.value as WidgetKind))}
+                className="w-full border rounded px-3 py-1.5 text-sm"
+              >
+                {WIDGET_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500">
+                {WIDGET_OPTIONS.find((o) => o.value === parseWidgetKind(draft))?.help}
+              </p>
             </div>
           ) : (
             <textarea className="w-full border rounded px-3 py-1.5 text-sm font-mono resize-y" rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />

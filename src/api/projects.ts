@@ -3,6 +3,7 @@ import type { Env, Project, ProjectStep, ContentElement, ProjectVersion } from '
 import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
 import { startPublishJob } from './publish';
+import { pagesWithWidget } from '../renderer/widgets';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -37,7 +38,7 @@ projectRoutes.post('/', requireAdmin, async (c) => {
     .run();
 
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
-  await c.env.PAGES_KV.delete('home');
+  await invalidateProjectListCaches(c.env);
   return c.json(project, 201);
 });
 
@@ -286,8 +287,23 @@ async function invalidateProjectCache(env: Env, slug: string) {
   const key = `project:${slug}`;
   await Promise.all([
     env.PAGES_KV.delete(key),
-    env.PAGES_KV.delete('home'),
     env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
+    invalidateProjectListCaches(env),
+  ]);
+}
+
+// Drops the legacy 'home' KV key and every Page that embeds a project_list widget.
+async function invalidateProjectListCaches(env: Env) {
+  const slugs = await pagesWithWidget(env, 'project_list');
+  await Promise.all([
+    env.PAGES_KV.delete('home'),
+    ...slugs.flatMap((slug) => {
+      const key = `page:${slug}`;
+      return [
+        env.PAGES_KV.delete(key),
+        env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
+      ];
+    }),
   ]);
 }
 

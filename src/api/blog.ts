@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, BlogEntry } from '../types';
 import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
+import { pagesWithWidget } from '../renderer/widgets';
 
 export const blogRoutes = new Hono<{ Bindings: Env }>();
 
@@ -32,6 +33,8 @@ blogRoutes.post('/', requireAdmin, async (c) => {
   )
     .bind(id, slug, body.title, body.entry_date, body.published ?? 1, ts, ts)
     .run();
+
+  await invalidateBlogListCaches(c.env);
 
   return c.json(
     await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?').bind(id).first<BlogEntry>(),
@@ -75,7 +78,7 @@ blogRoutes.put('/:id', requireAdmin, async (c) => {
 
   await invalidateBlogCache(c.env, existing.slug);
   if (slug !== existing.slug) await invalidateBlogCache(c.env, slug);
-  await c.env.PAGES_KV.delete('blog:index');
+  await invalidateBlogListCaches(c.env);
 
   return c.json(await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?').bind(id).first<BlogEntry>());
 });
@@ -88,7 +91,7 @@ blogRoutes.delete('/:id', requireAdmin, async (c) => {
 
   await c.env.DB.prepare('DELETE FROM blog_entries WHERE id = ?').bind(c.req.param('id')).run();
   await invalidateBlogCache(c.env, existing.slug);
-  await c.env.PAGES_KV.delete('blog:index');
+  await invalidateBlogListCaches(c.env);
   return c.json({ ok: true });
 });
 
@@ -96,4 +99,19 @@ async function invalidateBlogCache(env: Env, slug: string) {
   const key = `blog:${slug}`;
   await env.PAGES_KV.delete(key);
   await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+}
+
+// Drops the legacy 'blog:index' KV key plus any Page that embeds a blog_list widget.
+async function invalidateBlogListCaches(env: Env) {
+  const slugs = await pagesWithWidget(env, 'blog_list');
+  await Promise.all([
+    env.PAGES_KV.delete('blog:index'),
+    ...slugs.flatMap((slug) => {
+      const key = `page:${slug}`;
+      return [
+        env.PAGES_KV.delete(key),
+        env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
+      ];
+    }),
+  ]);
 }

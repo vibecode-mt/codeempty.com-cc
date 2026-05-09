@@ -17,13 +17,20 @@ pageRoutes.post('/', requireAdmin, async (c) => {
   const id = uuid();
   const ts = now();
   const slug = slugify(body.slug);
+  const isHome = body.is_home ? 1 : 0;
+
+  if (isHome) {
+    // Enforce single-home: clear existing home flag(s) before inserting.
+    await c.env.DB.prepare('UPDATE pages SET is_home = 0 WHERE is_home = 1').run();
+  }
 
   await c.env.DB.prepare(
-    'INSERT INTO pages (id, slug, title, published, show_in_menu, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO pages (id, slug, title, published, show_in_menu, is_home, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(id, slug, body.title, body.published ?? 1, body.show_in_menu ?? 0, ts, ts)
+    .bind(id, slug, body.title, body.published ?? 1, body.show_in_menu ?? 0, isHome, ts, ts)
     .run();
 
+  if (isHome) await invalidateHomeCache(c.env);
   return c.json(await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<Page>(), 201);
 });
 
@@ -43,25 +50,41 @@ pageRoutes.put('/:id', requireAdmin, async (c) => {
 
   const slug = body.slug ? slugify(body.slug) : existing.slug;
   const showInMenu = body.show_in_menu ?? existing.show_in_menu;
-  await c.env.DB.prepare('UPDATE pages SET slug=?, title=?, published=?, show_in_menu=?, updated_at=? WHERE id=?')
-    .bind(slug, body.title ?? existing.title, body.published ?? existing.published, showInMenu, now(), id)
+  const isHome = body.is_home != null ? (body.is_home ? 1 : 0) : existing.is_home;
+
+  if (isHome === 1 && existing.is_home !== 1) {
+    // Clear any other home before promoting this page (the partial unique index
+    // would otherwise reject the update).
+    await c.env.DB.prepare('UPDATE pages SET is_home = 0 WHERE is_home = 1 AND id != ?').bind(id).run();
+  }
+
+  await c.env.DB.prepare(
+    'UPDATE pages SET slug=?, title=?, published=?, show_in_menu=?, is_home=?, updated_at=? WHERE id=?',
+  )
+    .bind(slug, body.title ?? existing.title, body.published ?? existing.published, showInMenu, isHome, now(), id)
     .run();
 
   await invalidatePageCache(c.env, existing.slug);
   if (slug !== existing.slug) await invalidatePageCache(c.env, slug);
   if (showInMenu !== existing.show_in_menu) await invalidateNavCaches(c.env);
+  if (isHome !== existing.is_home) await invalidateHomeCache(c.env);
 
   return c.json(await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<Page>());
 });
 
 pageRoutes.delete('/:id', requireAdmin, async (c) => {
-  const existing = await c.env.DB.prepare('SELECT slug FROM pages WHERE id = ?')
+  const existing = await c.env.DB.prepare('SELECT slug, is_home FROM pages WHERE id = ?')
     .bind(c.req.param('id'))
-    .first<{ slug: string }>();
+    .first<{ slug: string; is_home: number }>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
   await c.env.DB.prepare('DELETE FROM pages WHERE id = ?').bind(c.req.param('id')).run();
+  // Also drop the page's content elements so we don't leave orphan widgets.
+  await c.env.DB.prepare('DELETE FROM content_elements WHERE parent_type = ? AND parent_id = ?')
+    .bind('page', c.req.param('id'))
+    .run();
   await invalidatePageCache(c.env, existing.slug);
+  if (existing.is_home) await invalidateHomeCache(c.env);
   return c.json({ ok: true });
 });
 
@@ -69,6 +92,13 @@ async function invalidatePageCache(env: Env, slug: string) {
   const key = `page:${slug}`;
   await env.PAGES_KV.delete(key);
   await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+}
+
+async function invalidateHomeCache(env: Env) {
+  // Drop the legacy 'home' KV key plus every cached home-by-slug entry. Cheap.
+  await env.PAGES_KV.delete('home');
+  const homeRow = await env.DB.prepare('SELECT slug FROM pages WHERE is_home = 1').first<{ slug: string }>();
+  if (homeRow) await invalidatePageCache(env, homeRow.slug);
 }
 
 async function invalidateNavCaches(env: Env) {

@@ -2,50 +2,6 @@ import type { Env, BlogEntry, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElements } from './content';
 
-export async function renderBlogIndex(env: Env): Promise<Response> {
-  const cacheKey = 'blog:index';
-  const cached = await env.PAGES_KV.get(cacheKey);
-  if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
-
-  const [entriesResult, scriptsResult, navPages] = await Promise.all([
-    env.DB.prepare('SELECT * FROM blog_entries WHERE published = 1 ORDER BY entry_date DESC').all<BlogEntry>(),
-    env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
-    fetchNavPages(env),
-  ]);
-
-  const entries = entriesResult.results;
-  const scripts = scriptsResult.results;
-
-  // Group by date
-  const groups = new Map<string, BlogEntry[]>();
-  for (const entry of entries) {
-    const date = entry.entry_date.slice(0, 10);
-    if (!groups.has(date)) groups.set(date, []);
-    groups.get(date)!.push(entry);
-  }
-
-  const groupHtml = [...groups.entries()]
-    .map(
-      ([date, items]) => `<div class="blog-date-group">
-        <div class="blog-date-label">${formatDate(date)}</div>
-        ${items.map((e) => `<a class="blog-entry-link" href="/blog/${escHtml(e.slug)}">${escHtml(e.title)}</a>`).join('')}
-      </div>`,
-    )
-    .join('');
-
-  const body = `
-    <h1 class="page-title">Blog</h1>
-    <div class="blog-list" style="margin-top:1.5rem">
-      ${groupHtml || '<p>No entries yet.</p>'}
-    </div>
-  `;
-
-  const html = renderLayout({ title: 'Blog — CodeEmpty', body, scripts, navPages });
-  await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
-
-  return new Response(html, { headers: { 'content-type': 'text/html;charset=utf-8' } });
-}
-
 export async function renderBlogEntry(slug: string, env: Env): Promise<Response> {
   const cacheKey = `blog:${slug}`;
   const cached = await env.PAGES_KV.get(cacheKey);
