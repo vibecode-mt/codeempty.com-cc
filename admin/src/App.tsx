@@ -18,6 +18,7 @@ import Settings from './pages/Settings';
 import FormSetupGuide from './pages/ContactSetupGuide';
 import Forms from './pages/Forms';
 import FormEdit from './pages/FormEdit';
+import FormSubmissions from './pages/FormSubmissions';
 
 export default function App() {
   const [user, setUser] = useState<{ username: string } | null | undefined>(undefined);
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/destinations" element={<Destinations />} />
         <Route path="/forms" element={<Forms />} />
         <Route path="/forms/new" element={<FormEdit />} />
+        <Route path="/forms/submissions" element={<FormSubmissions />} />
         <Route path="/forms/:id" element={<FormEdit />} />
         <Route path="/forms/setup" element={<FormSetupGuide />} />
         <Route path="/settings" element={<Settings />} />

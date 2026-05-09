@@ -207,11 +207,6 @@ export const api = {
   // Cache
   invalidateAll: () => req('POST', '/cache/invalidate-all'),
 
-  // Contact form
-  getContactConfig: () => req<ContactFormConfig>('GET', '/contact/config'),
-  updateContactConfig: (b: ContactFormConfig) => req<ContactFormConfig>('PUT', '/contact/config', b),
-  listContactSubmissions: () => req<ContactSubmission[]>('GET', '/contact/submissions'),
-
   // Generic forms
   listForms: () => req<FormDefinition[]>('GET', '/forms'),
   listAllFormSubmissions: () => req<FormSubmission[]>('GET', '/forms/submissions'),
@@ -304,32 +299,32 @@ export interface ExportData {
   media: { key: string; url: string }[];
 }
 
-export type ContactFieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox';
-export interface ContactFieldOption {
+export type FieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox';
+export interface FieldOption {
   label: string;
   value: string;
 }
-export interface ContactField {
+export interface FormField {
   key: string;
   label: string;
-  type: ContactFieldType;
+  type: FieldType;
   required: number;
   placeholder?: string;
   help_text?: string;
-  options?: ContactFieldOption[];
+  options?: FieldOption[];
 }
-export type ContactCaptchaProvider = 'none' | 'turnstile' | 'recaptcha_v2' | 'recaptcha_v3';
-export interface ContactCaptchaConfig {
+export type CaptchaProvider = 'none' | 'turnstile' | 'recaptcha_v2' | 'recaptcha_v3';
+export interface CaptchaConfig {
   enabled: number;
-  provider: ContactCaptchaProvider;
+  provider: CaptchaProvider;
   site_key: string;
   secret_key: string;
   recaptcha_action?: string;
   recaptcha_min_score?: number;
 }
-export type ContactDeliveryProvider = 'webhook' | 'smtp';
-export interface ContactDeliveryConfig {
-  provider: ContactDeliveryProvider;
+export type DeliveryProvider = 'webhook' | 'smtp';
+export interface DeliveryConfig {
+  provider: DeliveryProvider;
   to_email: string;
   from_email: string;
   webhook_url?: string;
@@ -340,30 +335,15 @@ export interface ContactDeliveryConfig {
   smtp_password?: string;
   smtp_secure?: number;
 }
-export interface ContactFormConfig {
-  fields: ContactField[];
-  captcha: ContactCaptchaConfig;
-  delivery: ContactDeliveryConfig;
-  submit_button_label: string;
-  success_message: string;
-}
-export interface ContactSubmission {
-  id: string;
-  source_page_slug: string | null;
-  payload_json: string;
-  status: string;
-  error_message: string | null;
-  created_at: string;
-}
 
 export interface FormDefinition {
   id: string;
   slug: string;
   name: string;
   published: number;
-  fields: ContactField[];
-  captcha: ContactCaptchaConfig;
-  delivery: ContactDeliveryConfig;
+  fields: FormField[];
+  captcha: CaptchaConfig;
+  delivery: DeliveryConfig;
   submit_action_type: 'message' | 'redirect' | 'show_summary';
   submit_action_value: string;
   success_message: string;

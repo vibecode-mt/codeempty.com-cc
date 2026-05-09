@@ -25,12 +25,11 @@ function parseUserComment(content: string): { text: string; username: string; pr
   }
 }
 
-type WidgetKind = 'project_list' | 'blog_list' | 'contact' | 'form' | 'form_data';
+type WidgetKind = 'project_list' | 'blog_list' | 'form' | 'form_data';
 
 const WIDGET_OPTIONS: { value: WidgetKind; label: string; help: string }[] = [
   { value: 'project_list', label: 'Project list', help: 'Renders the published projects as a card grid (like the home page).' },
   { value: 'blog_list', label: 'Blog list', help: 'Renders published blog entries grouped by date.' },
-  { value: 'contact', label: 'Contact form', help: 'Renders the configurable contact form from Settings → Contact Form.' },
   { value: 'form', label: 'Form', help: 'Renders a selected generic form. Set form slug in widget settings.' },
   { value: 'form_data', label: 'Form Data', help: 'Renders submission data for a selected form with display/filter settings.' },
 ];
@@ -38,7 +37,7 @@ const WIDGET_OPTIONS: { value: WidgetKind; label: string; help: string }[] = [
 function parseWidgetKind(content: string): WidgetKind {
   try {
     const parsed = JSON.parse(content) as { kind?: string };
-    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list' || parsed.kind === 'contact' || parsed.kind === 'form' || parsed.kind === 'form_data') return parsed.kind;
+    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list' || parsed.kind === 'form' || parsed.kind === 'form_data') return parsed.kind;
   } catch {
     /* fall through */
   }
