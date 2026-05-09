@@ -211,6 +211,21 @@ export const api = {
   getContactConfig: () => req<ContactFormConfig>('GET', '/contact/config'),
   updateContactConfig: (b: ContactFormConfig) => req<ContactFormConfig>('PUT', '/contact/config', b),
   listContactSubmissions: () => req<ContactSubmission[]>('GET', '/contact/submissions'),
+
+  // Generic forms
+  listForms: () => req<FormDefinition[]>('GET', '/forms'),
+  listAllFormSubmissions: () => req<FormSubmission[]>('GET', '/forms/submissions'),
+  createForm: (b: Partial<FormDefinition>) => req<FormDefinition>('POST', '/forms', b),
+  getForm: (id: string) => req<FormDefinition>('GET', `/forms/${id}`),
+  updateForm: (id: string, b: Partial<FormDefinition>) => req<FormDefinition>('PUT', `/forms/${id}`, b),
+  deleteForm: (id: string) => req<{ ok: boolean }>('DELETE', `/forms/${id}`),
+  listFormSubmissions: (id: string) => req<FormSubmission[]>('GET', `/forms/${id}/submissions`),
+  createFormSubmission: (id: string, b: { payload_json?: string; status?: string; source_page_slug?: string }) =>
+    req<FormSubmission>('POST', `/forms/${id}/submissions`, b),
+  updateFormSubmission: (id: string, submissionId: string, b: Partial<FormSubmission>) =>
+    req<FormSubmission>('PUT', `/forms/${id}/submissions/${submissionId}`, b),
+  deleteFormSubmission: (id: string, submissionId: string) =>
+    req<{ ok: boolean }>('DELETE', `/forms/${id}/submissions/${submissionId}`),
 };
 
 // Shared types (duplicated from src/types.ts for the admin bundle)
@@ -339,4 +354,32 @@ export interface ContactSubmission {
   status: string;
   error_message: string | null;
   created_at: string;
+}
+
+export interface FormDefinition {
+  id: string;
+  slug: string;
+  name: string;
+  published: number;
+  fields: ContactField[];
+  captcha: ContactCaptchaConfig;
+  delivery: ContactDeliveryConfig;
+  submit_action_type: 'message' | 'redirect' | 'show_summary';
+  submit_action_value: string;
+  success_message: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  form_id: string;
+  form_slug?: string;
+  form_name?: string;
+  source_page_slug: string | null;
+  payload_json: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { api, type ContactSubmission } from '../api';
+import { api, type FormSubmission } from '../api';
 import { useEffect } from 'react';
 
 type FlatRecord = Record<string, string>;
+type RowRecord = FlatRecord & { _id: string; _raw: string };
 
 function parsePayload(payloadJson: string): unknown {
   try {
@@ -41,30 +42,33 @@ function flattenJson(value: unknown, prefix = '', out: FlatRecord = {}): FlatRec
 }
 
 export default function ContactSubmissions() {
-  const [submissions, setSubmissions] = useState<ContactSubmission[]>([]);
+  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [pageFilter, setPageFilter] = useState('all');
+  const [formFilter, setFormFilter] = useState('all');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [rawOpenId, setRawOpenId] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listContactSubmissions()
+    api.listAllFormSubmissions()
       .then(setSubmissions)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  const rows = useMemo(() => submissions.map((sub) => {
+  const rows = useMemo<RowRecord[]>(() => submissions.map((sub) => {
     const payload = parsePayload(sub.payload_json);
     const flat = flattenJson(payload);
     return {
       _id: sub.id,
       _raw: sub.payload_json,
       id: sub.id,
+      form_slug: sub.form_slug ?? '',
+      form_name: sub.form_name ?? '',
       created_at: sub.created_at,
       status: sub.status,
       source_page_slug: sub.source_page_slug ?? '',
@@ -74,7 +78,7 @@ export default function ContactSubmissions() {
   }), [submissions]);
 
   const columns = useMemo(() => {
-    const base = ['created_at', 'status', 'source_page_slug', 'error_message', 'id'];
+    const base = ['created_at', 'form_name', 'form_slug', 'status', 'source_page_slug', 'error_message', 'id'];
     const dynamic = new Set<string>();
     for (const row of rows) {
       for (const key of Object.keys(row)) {
@@ -86,12 +90,14 @@ export default function ContactSubmissions() {
 
   const statuses = useMemo(() => ['all', ...Array.from(new Set(rows.map((r) => r.status))).sort()], [rows]);
   const pages = useMemo(() => ['all', ...Array.from(new Set(rows.map((r) => r.source_page_slug).filter(Boolean))).sort()], [rows]);
+  const forms = useMemo(() => ['all', ...Array.from(new Set(rows.map((r) => r.form_slug).filter(Boolean))).sort()], [rows]);
 
   const filteredSorted = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = rows.filter((row) => {
       if (statusFilter !== 'all' && row.status !== statusFilter) return false;
       if (pageFilter !== 'all' && row.source_page_slug !== pageFilter) return false;
+      if (formFilter !== 'all' && row.form_slug !== formFilter) return false;
       if (!q) return true;
       for (const val of Object.values(row)) {
         if (String(val).toLowerCase().includes(q)) return true;
@@ -105,7 +111,7 @@ export default function ContactSubmissions() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return filtered;
-  }, [rows, query, statusFilter, pageFilter, sortBy, sortDir]);
+  }, [rows, query, statusFilter, pageFilter, formFilter, sortBy, sortDir]);
 
   function changeSort(col: string) {
     if (sortBy === col) {
@@ -136,7 +142,7 @@ export default function ContactSubmissions() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Contact Submissions</h1>
+          <h1 className="text-2xl font-bold">Form Data</h1>
           <p className="text-sm text-gray-500">Flattened table view with search, filter, sort, CSV export, and raw JSON.</p>
         </div>
         <button onClick={exportCsv} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50" disabled={filteredSorted.length === 0}>
@@ -158,6 +164,9 @@ export default function ContactSubmissions() {
         </select>
         <select className="border rounded px-3 py-2 text-sm" value={pageFilter} onChange={(e) => setPageFilter(e.target.value)}>
           {pages.map((p) => <option key={p} value={p}>{p === 'all' ? 'All pages' : p}</option>)}
+        </select>
+        <select className="border rounded px-3 py-2 text-sm" value={formFilter} onChange={(e) => setFormFilter(e.target.value)}>
+          {forms.map((f) => <option key={f} value={f}>{f === 'all' ? 'All forms' : f}</option>)}
         </select>
         <span className="text-xs text-gray-500 ml-auto">{filteredSorted.length} / {rows.length} rows</span>
       </div>

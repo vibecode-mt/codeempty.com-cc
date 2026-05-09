@@ -99,7 +99,7 @@ export type ContentElementType =
 export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export type ParentType = 'project_step' | 'page' | 'blog_entry';
 
-export type WidgetKind = 'project_list' | 'blog_list' | 'contact';
+export type WidgetKind = 'project_list' | 'blog_list' | 'contact' | 'form' | 'form_data';
 export interface WidgetContent {
   kind: WidgetKind;
 }
@@ -161,6 +161,34 @@ export interface ContactSubmission {
   status: string;
   error_message: string | null;
   created_at: string;
+}
+
+export type FormSubmitActionType = 'message' | 'redirect' | 'show_summary';
+
+export interface FormDefinition {
+  id: string;
+  slug: string;
+  name: string;
+  published: number;
+  fields_json: string;
+  captcha_json: string;
+  delivery_json: string;
+  submit_action_type: FormSubmitActionType;
+  submit_action_value: string | null;
+  success_message: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  form_id: string;
+  source_page_slug: string | null;
+  payload_json: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ContentElement {

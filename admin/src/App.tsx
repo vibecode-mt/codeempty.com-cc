@@ -17,6 +17,8 @@ import Destinations from './pages/Destinations';
 import Settings from './pages/Settings';
 import ContactSetupGuide from './pages/ContactSetupGuide';
 import ContactSubmissions from './pages/ContactSubmissions';
+import Forms from './pages/Forms';
+import FormEdit from './pages/FormEdit';
 
 export default function App() {
   const [user, setUser] = useState<{ username: string } | null | undefined>(undefined);
@@ -57,6 +59,9 @@ export default function App() {
         <Route path="/scripts" element={<Scripts />} />
         <Route path="/oauth" element={<OAuthApps />} />
         <Route path="/destinations" element={<Destinations />} />
+        <Route path="/forms" element={<Forms />} />
+        <Route path="/forms/new" element={<FormEdit />} />
+        <Route path="/forms/:id" element={<FormEdit />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/contact-setup" element={<ContactSetupGuide />} />
         <Route path="/contact-submissions" element={<ContactSubmissions />} />

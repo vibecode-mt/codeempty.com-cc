@@ -25,26 +25,37 @@ function parseUserComment(content: string): { text: string; username: string; pr
   }
 }
 
-type WidgetKind = 'project_list' | 'blog_list' | 'contact';
+type WidgetKind = 'project_list' | 'blog_list' | 'contact' | 'form' | 'form_data';
 
 const WIDGET_OPTIONS: { value: WidgetKind; label: string; help: string }[] = [
   { value: 'project_list', label: 'Project list', help: 'Renders the published projects as a card grid (like the home page).' },
   { value: 'blog_list', label: 'Blog list', help: 'Renders published blog entries grouped by date.' },
   { value: 'contact', label: 'Contact form', help: 'Renders the configurable contact form from Settings → Contact Form.' },
+  { value: 'form', label: 'Form', help: 'Renders a selected generic form. Set form slug in widget settings.' },
+  { value: 'form_data', label: 'Form Data', help: 'Renders submission data for a selected form with display/filter settings.' },
 ];
 
 function parseWidgetKind(content: string): WidgetKind {
   try {
     const parsed = JSON.parse(content) as { kind?: string };
-    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list' || parsed.kind === 'contact') return parsed.kind;
+    if (parsed.kind === 'project_list' || parsed.kind === 'blog_list' || parsed.kind === 'contact' || parsed.kind === 'form' || parsed.kind === 'form_data') return parsed.kind;
   } catch {
     /* fall through */
   }
   return 'project_list';
 }
 
-function stringifyWidget(kind: WidgetKind): string {
-  return JSON.stringify({ kind });
+function parseWidgetConfig(content: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    return typeof parsed === 'object' && parsed ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringifyWidget(kind: WidgetKind, config?: Record<string, unknown>): string {
+  return JSON.stringify({ kind, ...(config ?? {}) });
 }
 
 function stringifyUserComment(c: { text: string; username: string; profile_url: string; comment_url: string }): string {
@@ -104,6 +115,11 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   const [newRenderStyle, setNewRenderStyle] = useState<RenderStyle>('default');
   const [newComment, setNewComment] = useState({ text: '', username: '', profile_url: '', comment_url: '' });
   const [newWidgetKind, setNewWidgetKind] = useState<WidgetKind>('project_list');
+  const [newWidgetFormSlug, setNewWidgetFormSlug] = useState('');
+  const [newWidgetDisplay, setNewWidgetDisplay] = useState<'table' | 'graph' | 'summary'>('table');
+  const [newWidgetDateRange, setNewWidgetDateRange] = useState<'all' | 'day' | 'week' | 'month'>('all');
+  const [newWidgetFieldKey, setNewWidgetFieldKey] = useState('');
+  const [newWidgetFieldValue, setNewWidgetFieldValue] = useState('');
   const [error, setError] = useState('');
 
   // Drag state
@@ -123,7 +139,21 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
         }
         content = stringifyUserComment(newComment);
       } else if (newType === 'widget') {
-        content = stringifyWidget(newWidgetKind);
+        const cfg: Record<string, unknown> = {};
+        if (newWidgetKind === 'form' || newWidgetKind === 'form_data') {
+          if (!newWidgetFormSlug.trim()) {
+            setError('Form slug is required for form widgets');
+            return;
+          }
+          cfg.form_slug = newWidgetFormSlug.trim();
+        }
+        if (newWidgetKind === 'form_data') {
+          cfg.display = newWidgetDisplay;
+          cfg.date_range = newWidgetDateRange;
+          if (newWidgetFieldKey.trim()) cfg.field_key = newWidgetFieldKey.trim();
+          if (newWidgetFieldValue.trim()) cfg.field_value = newWidgetFieldValue.trim();
+        }
+        content = stringifyWidget(newWidgetKind, cfg);
       }
       const el = await api.createContent(parentType, parentId, {
         type: newType,
@@ -390,6 +420,49 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
               <p className="text-xs text-gray-500">
                 {WIDGET_OPTIONS.find((o) => o.value === newWidgetKind)?.help}
               </p>
+              {(newWidgetKind === 'form' || newWidgetKind === 'form_data') && (
+                <input
+                  className="w-full border rounded px-3 py-1.5 text-sm font-mono"
+                  placeholder="Form slug (e.g. contact-us)"
+                  value={newWidgetFormSlug}
+                  onChange={(e) => setNewWidgetFormSlug(e.target.value)}
+                />
+              )}
+              {newWidgetKind === 'form_data' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    className="border rounded px-3 py-1.5 text-sm"
+                    value={newWidgetDisplay}
+                    onChange={(e) => setNewWidgetDisplay(e.target.value as 'table' | 'graph' | 'summary')}
+                  >
+                    <option value="table">Display: table</option>
+                    <option value="summary">Display: summary</option>
+                    <option value="graph">Display: graph</option>
+                  </select>
+                  <select
+                    className="border rounded px-3 py-1.5 text-sm"
+                    value={newWidgetDateRange}
+                    onChange={(e) => setNewWidgetDateRange(e.target.value as 'all' | 'day' | 'week' | 'month')}
+                  >
+                    <option value="all">Range: all time</option>
+                    <option value="day">Range: last day</option>
+                    <option value="week">Range: last week</option>
+                    <option value="month">Range: last month</option>
+                  </select>
+                  <input
+                    className="border rounded px-3 py-1.5 text-sm font-mono"
+                    placeholder="Filter field key (optional)"
+                    value={newWidgetFieldKey}
+                    onChange={(e) => setNewWidgetFieldKey(e.target.value)}
+                  />
+                  <input
+                    className="border rounded px-3 py-1.5 text-sm"
+                    placeholder="Filter value (optional)"
+                    value={newWidgetFieldValue}
+                    onChange={(e) => setNewWidgetFieldValue(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <textarea
@@ -467,7 +540,12 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
     let content = draft;
     if (el.type === 'url') content = JSON.stringify({ href: urlHref, label: urlLabel || urlHref });
     else if (el.type === 'user_comment') content = stringifyUserComment(comment);
-    else if (el.type === 'widget') content = stringifyWidget(parseWidgetKind(draft));
+    else if (el.type === 'widget') {
+      const kind = parseWidgetKind(draft);
+      const parsed = parseWidgetConfig(draft);
+      delete parsed.kind;
+      content = stringifyWidget(kind, parsed);
+    }
     await onUpdate(content);
     setEditing(false);
   }
@@ -651,9 +729,24 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
             </div>
           ) : el.type === 'widget' ? (
             <div className="space-y-2">
+              {(() => {
+                const parsed = parseWidgetConfig(draft);
+                const kind = parseWidgetKind(draft);
+                const formSlug = typeof parsed.form_slug === 'string' ? parsed.form_slug : '';
+                const display = parsed.display === 'graph' || parsed.display === 'summary' ? parsed.display : 'table';
+                const dateRange = parsed.date_range === 'day' || parsed.date_range === 'week' || parsed.date_range === 'month' ? parsed.date_range : 'all';
+                const fieldKey = typeof parsed.field_key === 'string' ? parsed.field_key : '';
+                const fieldValue = typeof parsed.field_value === 'string' ? parsed.field_value : '';
+                return (
+                  <>
               <select
-                value={parseWidgetKind(draft)}
-                onChange={(e) => setDraft(stringifyWidget(e.target.value as WidgetKind))}
+                value={kind}
+                onChange={(e) => {
+                  const nextKind = e.target.value as WidgetKind;
+                  const nextCfg = { ...parsed };
+                  delete nextCfg.kind;
+                  setDraft(stringifyWidget(nextKind, nextCfg));
+                }}
                 className="w-full border rounded px-3 py-1.5 text-sm"
               >
                 {WIDGET_OPTIONS.map((o) => (
@@ -661,8 +754,54 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
                 ))}
               </select>
               <p className="text-xs text-gray-500">
-                {WIDGET_OPTIONS.find((o) => o.value === parseWidgetKind(draft))?.help}
+                {WIDGET_OPTIONS.find((o) => o.value === kind)?.help}
               </p>
+                  {(kind === 'form' || kind === 'form_data') && (
+                    <input
+                      className="w-full border rounded px-3 py-1.5 text-sm font-mono"
+                      placeholder="Form slug (e.g. contact-us)"
+                      value={formSlug}
+                      onChange={(e) => setDraft(stringifyWidget(kind, { ...parsed, form_slug: e.target.value }))}
+                    />
+                  )}
+                  {kind === 'form_data' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className="border rounded px-3 py-1.5 text-sm"
+                        value={display}
+                        onChange={(e) => setDraft(stringifyWidget(kind, { ...parsed, display: e.target.value }))}
+                      >
+                        <option value="table">Display: table</option>
+                        <option value="summary">Display: summary</option>
+                        <option value="graph">Display: graph</option>
+                      </select>
+                      <select
+                        className="border rounded px-3 py-1.5 text-sm"
+                        value={dateRange}
+                        onChange={(e) => setDraft(stringifyWidget(kind, { ...parsed, date_range: e.target.value }))}
+                      >
+                        <option value="all">Range: all time</option>
+                        <option value="day">Range: last day</option>
+                        <option value="week">Range: last week</option>
+                        <option value="month">Range: last month</option>
+                      </select>
+                      <input
+                        className="border rounded px-3 py-1.5 text-sm font-mono"
+                        placeholder="Filter field key (optional)"
+                        value={fieldKey}
+                        onChange={(e) => setDraft(stringifyWidget(kind, { ...parsed, field_key: e.target.value }))}
+                      />
+                      <input
+                        className="border rounded px-3 py-1.5 text-sm"
+                        placeholder="Filter value (optional)"
+                        value={fieldValue}
+                        onChange={(e) => setDraft(stringifyWidget(kind, { ...parsed, field_value: e.target.value }))}
+                      />
+                    </div>
+                  )}
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <textarea className="w-full border rounded px-3 py-1.5 text-sm font-mono resize-y" rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />
