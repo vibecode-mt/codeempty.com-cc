@@ -16,6 +16,7 @@ const nav = [
   { to: '/scripts', label: 'Scripts', abbr: 'S' },
   { to: '/oauth', label: 'API Apps', abbr: 'A' },
   { to: '/destinations', label: 'Destinations', abbr: 'Dst' },
+  { to: '/contact-submissions', label: 'Contact Submissions', abbr: 'CS' },
   { to: '/settings', label: 'Settings', abbr: '⚙' },
 ];
 

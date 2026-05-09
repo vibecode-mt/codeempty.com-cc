@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type ContactField, type ContactFormConfig, type ContactSubmission } from '../api';
+import { api, type ContactField, type ContactFormConfig } from '../api';
 
 const FIELD_TYPES: ContactField['type'][] = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'];
 
 function defaultField(): ContactField {
   return { key: 'field_name', label: 'Field name', type: 'text', required: 0, placeholder: '', help_text: '', options: [] };
-}
-
-function parseSubmissionPayload(payloadJson: string): { fields?: Record<string, unknown> } {
-  try {
-    return JSON.parse(payloadJson) as { fields?: Record<string, unknown> };
-  } catch {
-    return {};
-  }
 }
 
 export default function Settings() {
@@ -27,13 +19,11 @@ export default function Settings() {
   const [contactSaving, setContactSaving] = useState(false);
   const [contactError, setContactError] = useState('');
   const [contactSuccess, setContactSuccess] = useState('');
-  const [submissions, setSubmissions] = useState<ContactSubmission[]>([]);
 
   useEffect(() => {
-    Promise.all([api.getContactConfig(), api.listContactSubmissions()])
-      .then(([cfg, subs]) => {
+    api.getContactConfig()
+      .then((cfg) => {
         setContact(cfg);
-        setSubmissions(subs);
       })
       .catch((e) => setContactError(String(e)))
       .finally(() => setContactLoading(false));
@@ -132,6 +122,12 @@ export default function Settings() {
             className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 whitespace-nowrap"
           >
             Setup guide
+          </Link>
+          <Link
+            to="/contact-submissions"
+            className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 whitespace-nowrap"
+          >
+            View submissions
           </Link>
         </div>
         {contactLoading || !contact ? (
@@ -376,30 +372,6 @@ export default function Settings() {
               {contactSuccess && <p className="text-sm text-green-600">{contactSuccess}</p>}
             </div>
           </>
-        )}
-      </div>
-
-      <div className="bg-white border rounded-xl p-6 space-y-3">
-        <h2 className="font-semibold">Recent Contact Submissions</h2>
-        {submissions.length === 0 ? (
-          <p className="text-sm text-gray-500">No submissions yet.</p>
-        ) : (
-          <div className="space-y-2 max-h-96 overflow-auto">
-            {submissions.map((sub) => {
-              const parsed = parseSubmissionPayload(sub.payload_json);
-              return (
-                <div key={sub.id} className="border rounded p-3 text-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-xs text-gray-500">{sub.created_at}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${sub.status === 'sent' ? 'bg-green-100 text-green-700' : sub.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{sub.status}</span>
-                  </div>
-                  <div className="text-xs text-gray-600 mb-1">Page: {sub.source_page_slug || '(unknown)'}</div>
-                  <pre className="bg-gray-50 border rounded p-2 text-xs overflow-auto">{JSON.stringify(parsed.fields ?? {}, null, 2)}</pre>
-                  {sub.error_message && <div className="mt-2 text-xs text-red-600">{sub.error_message}</div>}
-                </div>
-              );
-            })}
-          </div>
         )}
       </div>
 

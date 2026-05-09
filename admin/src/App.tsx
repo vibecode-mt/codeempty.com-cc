@@ -16,6 +16,7 @@ import OAuthApps from './pages/OAuthApps';
 import Destinations from './pages/Destinations';
 import Settings from './pages/Settings';
 import ContactSetupGuide from './pages/ContactSetupGuide';
+import ContactSubmissions from './pages/ContactSubmissions';
 
 export default function App() {
   const [user, setUser] = useState<{ username: string } | null | undefined>(undefined);
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/destinations" element={<Destinations />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/contact-setup" element={<ContactSetupGuide />} />
+        <Route path="/contact-submissions" element={<ContactSubmissions />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
