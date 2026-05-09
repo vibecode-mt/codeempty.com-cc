@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, type ContactField, type FormDefinition, type FormSubmission } from '../api';
+import { api, type FormField, type FormDefinition, type FormSubmission } from '../api';
 
-const FIELD_TYPES: ContactField['type'][] = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'];
+const FIELD_TYPES: FormField['type'][] = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'];
 
-function defaultField(): ContactField {
+function defaultField(): FormField {
   return { key: 'field_name', label: 'Field name', type: 'text', required: 0, placeholder: '', help_text: '', options: [] };
 }
 
@@ -164,7 +164,7 @@ export default function FormEdit() {
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs text-gray-500 mb-1">Type</label>
-                  <select className="w-full border rounded px-2 py-1 text-sm" value={field.type} onChange={(e) => setForm((f) => ({ ...f, fields: f.fields.map((x, i) => i === idx ? { ...x, type: e.target.value as ContactField['type'] } : x) }))}>
+                  <select className="w-full border rounded px-2 py-1 text-sm" value={field.type} onChange={(e) => setForm((f) => ({ ...f, fields: f.fields.map((x, i) => i === idx ? { ...x, type: e.target.value as FormField['type'] } : x) }))}>
                     {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>

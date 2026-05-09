@@ -14,7 +14,7 @@ const nav = [
   { to: '/pages', label: 'Pages', abbr: 'Pg' },
   { to: '/blog', label: 'Blog', abbr: 'B' },
   { to: '/scripts', label: 'Scripts', abbr: 'S' },
-  { to: '/forms', label: 'Forms', abbr: 'F' },
+  { to: '/forms', label: 'Forms', abbr: 'F', exact: true },
   { to: '/forms/submissions', label: 'Form Data', abbr: 'FD' },
   { to: '/oauth', label: 'API Apps', abbr: 'A' },
   { to: '/destinations', label: 'Destinations', abbr: 'Dst' },
