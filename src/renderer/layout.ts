@@ -41,8 +41,6 @@ export function renderLayout(opts: {
     <nav class="nav">
       <a class="nav-brand" href="/">CodeEmpty</a>
       <div class="nav-links">
-        <a href="/">Projects</a>
-        <a href="/blog">Blog</a>
         ${(opts.navPages ?? []).map((p) => `<a href="/${escHtml(p.slug)}">${escHtml(p.title)}</a>`).join('')}
       </div>
     </nav>
