@@ -260,7 +260,12 @@ export default function FormEdit() {
             <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Secret key" value={form.captcha.secret_key} onChange={(e) => setForm((f) => ({ ...f, captcha: { ...f.captcha, secret_key: e.target.value } }))} />
           </div>
           <div className="space-y-2">
-            <h2 className="font-semibold">Delivery</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Delivery</h2>
+              <Link to="/forms/setup" className="text-xs text-blue-600 hover:underline">
+                Amazon SES / webhook setup guide
+              </Link>
+            </div>
             <select className="w-full border rounded px-3 py-2 text-sm" value={form.delivery.provider} onChange={(e) => setForm((f) => ({ ...f, delivery: { ...f.delivery, provider: e.target.value as FormDefinition['delivery']['provider'] } }))}>
               <option value="webhook">Webhook</option>
               <option value="smtp">SMTP (config only)</option>
