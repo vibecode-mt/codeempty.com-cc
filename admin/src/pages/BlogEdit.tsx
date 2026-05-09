@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, type BlogEntry, type ContentElement } from '../api';
 import ContentElementEditor from '../components/ContentElementEditor';
+import { languageLabel } from '../lib/languages';
 
 export default function BlogEdit() {
   const { id } = useParams();
@@ -150,7 +151,7 @@ export default function BlogEdit() {
             <select className="w-full border rounded-lg px-3 py-2 text-sm" value={translationLanguage} onChange={(e) => setTranslationLanguage(e.target.value)}>
               <option value="">Select language</option>
               {supportedLanguages.filter((l) => l !== defaultLanguage).map((lang) => (
-                <option key={lang} value={lang}>{lang}</option>
+                <option key={lang} value={lang}>{languageLabel(lang)}</option>
               ))}
             </select>
           </div>

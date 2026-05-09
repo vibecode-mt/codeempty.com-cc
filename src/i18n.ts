@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectStep,
 } from './types';
+import type { FormConfig } from './forms';
 
 const FALLBACK_LANGUAGE = 'en';
 let schemaReady = false;
@@ -65,6 +66,22 @@ const I18N_SCHEMA_STATEMENTS = [
     content TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (content_element_id, language)
+  )`,
+  `CREATE TABLE IF NOT EXISTS form_translations (
+    form_id TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+    language TEXT NOT NULL,
+    name TEXT,
+    success_message TEXT,
+    fields_json TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (form_id, language)
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_translations (
+    site_key TEXT NOT NULL,
+    language TEXT NOT NULL,
+    title TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (site_key, language)
   )`,
 ];
 
@@ -360,7 +377,116 @@ export async function applyContentElementTranslations(
   const map = new Map(rows.map((r) => [r.content_element_id, r]));
   return elements.map((el) => {
     const tr = map.get(el.id);
-    if (!tr?.content?.trim()) return el;
-    return { ...el, content: tr.content };
+    const translated = tr?.content?.trim();
+    if (!translated) return el;
+
+    if (el.type === 'image') {
+      try {
+        const base = JSON.parse(el.content) as { url?: string; caption?: string };
+        const caption = translated;
+        return { ...el, content: JSON.stringify({ url: base.url ?? '', caption }) };
+      } catch {
+        return { ...el, content: translated };
+      }
+    }
+
+    if (el.type === 'url') {
+      try {
+        const base = JSON.parse(el.content) as { href?: string; label?: string };
+        return { ...el, content: JSON.stringify({ href: base.href ?? '', label: translated }) };
+      } catch {
+        return { ...el, content: translated };
+      }
+    }
+
+    if (el.type === 'user_comment') {
+      try {
+        const base = JSON.parse(el.content) as {
+          text?: string;
+          username?: string;
+          profile_url?: string;
+          comment_url?: string;
+        };
+        return {
+          ...el,
+          content: JSON.stringify({
+            text: translated,
+            username: base.username ?? '',
+            profile_url: base.profile_url ?? '',
+            comment_url: base.comment_url ?? '',
+          }),
+        };
+      } catch {
+        return { ...el, content: translated };
+      }
+    }
+
+    return { ...el, content: translated };
   });
+}
+
+export async function applyFormTranslation(env: Env, form: FormConfig, language: string): Promise<FormConfig> {
+  const lang = normalizeLanguageCode(language);
+  if (!lang || lang === FALLBACK_LANGUAGE) return form;
+
+  let row: { name: string | null; success_message: string | null; fields_json: string | null } | null = null;
+  try {
+    row = await env.DB.prepare(
+      'SELECT name, success_message, fields_json FROM form_translations WHERE form_id = ? AND language = ?',
+    )
+      .bind(form.id, lang)
+      .first<{ name: string | null; success_message: string | null; fields_json: string | null }>();
+  } catch {
+    return form;
+  }
+  if (!row) return form;
+
+  let translatedFields: Array<Record<string, unknown>> | null = null;
+  if (row.fields_json) {
+    try {
+      const parsed = JSON.parse(row.fields_json) as unknown;
+      if (Array.isArray(parsed)) translatedFields = parsed as Array<Record<string, unknown>>;
+    } catch {
+      translatedFields = null;
+    }
+  }
+
+  const fieldMap = new Map(
+    (translatedFields ?? []).map((field) => [String(field.key ?? ''), field]),
+  );
+
+  return {
+    ...form,
+    name: row.name?.trim() ? row.name : form.name,
+    success_message: row.success_message?.trim() ? row.success_message : form.success_message,
+    fields: form.fields.map((field) => {
+      const tr = fieldMap.get(field.key);
+      if (!tr) return field;
+      const options = Array.isArray(tr.options)
+        ? tr.options
+            .map((o) => ({ label: String((o as { label?: unknown }).label ?? '').trim(), value: String((o as { value?: unknown }).value ?? '').trim() }))
+            .filter((o) => o.label && o.value)
+        : field.options;
+      return {
+        ...field,
+        label: String(tr.label ?? '').trim() || field.label,
+        placeholder: String(tr.placeholder ?? '').trim() || field.placeholder,
+        help_text: String(tr.help_text ?? '').trim() || field.help_text,
+        options,
+      };
+    }),
+  };
+}
+
+export async function getSiteTitle(env: Env, language: string): Promise<string> {
+  const lang = normalizeLanguageCode(language);
+  if (!lang) return 'CodeEmpty';
+  try {
+    const row = await env.DB.prepare(
+      'SELECT title FROM site_translations WHERE site_key = ? AND language = ?',
+    ).bind('global', lang).first<{ title: string | null }>();
+    return row?.title?.trim() || 'CodeEmpty';
+  } catch {
+    return 'CodeEmpty';
+  }
 }

@@ -5,6 +5,7 @@ import {
   applyContentElementTranslations,
   applyProjectStepTranslations,
   applyProjectTranslations,
+  getSiteTitle,
 } from '../i18n';
 
 function pickNamespacedTags(tags: string | null, prefix: string): string[] {
@@ -103,6 +104,7 @@ export async function renderProject(slug: string, env: Env, language = 'en'): Pr
   if (!project) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
 
   const scripts = scriptsResult.results;
+  const siteTitle = await getSiteTitle(env, language);
   const translatedProjects = await applyProjectTranslations(env, [project], language);
   const localizedProject = translatedProjects[0] ?? project;
   const youtubeId = extractYoutubeId(localizedProject.youtube_url);
@@ -561,12 +563,13 @@ export async function renderProject(slug: string, env: Env, language = 'en'): Pr
   `;
 
   const html = renderLayout({
-    title: `${localizedProject.seo_title || localizedProject.title} — CodeEmpty`,
+    title: `${localizedProject.seo_title || localizedProject.title} — ${siteTitle}`,
     body,
     scripts,
     navPages,
     language,
     metaDescription: localizedProject.seo_description,
+    siteTitle,
   });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(

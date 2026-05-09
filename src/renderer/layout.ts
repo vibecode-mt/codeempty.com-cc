@@ -16,6 +16,7 @@ export function renderLayout(opts: {
   navPages?: { title: string; slug: string }[];
   language?: string;
   metaDescription?: string | null;
+  siteTitle?: string;
 }): string {
   const headScripts = opts.scripts
     .filter((s) => s.enabled && s.position === 'head')
@@ -47,7 +48,7 @@ export function renderLayout(opts: {
 <body>
   <header>
     <nav class="nav">
-      <a class="nav-brand" href="/">CodeEmpty</a>
+      <a class="nav-brand" href="/">${escHtml(opts.siteTitle ?? 'CodeEmpty')}</a>
       <div class="nav-links">
         ${(opts.navPages ?? []).map((p) => `<a href="/${escHtml(p.slug)}">${escHtml(p.title)}</a>`).join('')}
       </div>
@@ -57,7 +58,7 @@ export function renderLayout(opts: {
     ${opts.body}
   </main>
   <footer class="footer">
-    <p>&copy; ${new Date().getFullYear()} CodeEmpty.com</p>
+    <p>&copy; ${new Date().getFullYear()} ${escHtml(opts.siteTitle ?? 'CodeEmpty')}.com</p>
   </footer>
   ${bodyScripts}
 </body>

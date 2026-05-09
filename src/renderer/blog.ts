@@ -1,7 +1,7 @@
 import type { Env, BlogEntry, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElements } from './content';
-import { applyBlogEntryTranslations, applyContentElementTranslations } from '../i18n';
+import { applyBlogEntryTranslations, applyContentElementTranslations, getSiteTitle } from '../i18n';
 
 export async function renderBlogEntry(slug: string, env: Env, language = 'en'): Promise<Response> {
   const cacheKey = `blog:${slug}:lang:${language}`;
@@ -17,6 +17,7 @@ export async function renderBlogEntry(slug: string, env: Env, language = 'en'): 
   if (!entry) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
 
   const scripts = scriptsResult.results;
+  const siteTitle = await getSiteTitle(env, language);
   const translatedEntries = await applyBlogEntryTranslations(env, [entry], language);
   const localizedEntry = translatedEntries[0] ?? entry;
 
@@ -35,12 +36,13 @@ export async function renderBlogEntry(slug: string, env: Env, language = 'en'): 
   `;
 
   const html = renderLayout({
-    title: `${localizedEntry.seo_title || localizedEntry.title} — CodeEmpty`,
+    title: `${localizedEntry.seo_title || localizedEntry.title} — ${siteTitle}`,
     body,
     scripts,
     navPages,
     language,
     metaDescription: localizedEntry.seo_description,
+    siteTitle,
   });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(

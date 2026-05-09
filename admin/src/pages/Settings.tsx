@@ -1,33 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-
-const LANGUAGE_OPTIONS: Array<{ code: string; name: string }> = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'nl', name: 'Dutch' },
-  { code: 'sv', name: 'Swedish' },
-  { code: 'no', name: 'Norwegian' },
-  { code: 'da', name: 'Danish' },
-  { code: 'fi', name: 'Finnish' },
-  { code: 'pl', name: 'Polish' },
-  { code: 'cs', name: 'Czech' },
-  { code: 'tr', name: 'Turkish' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'uk', name: 'Ukrainian' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'he', name: 'Hebrew' },
-  { code: 'hi', name: 'Hindi' },
-  { code: 'th', name: 'Thai' },
-  { code: 'vi', name: 'Vietnamese' },
-  { code: 'id', name: 'Indonesian' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'cn', name: 'Chinese (Simplified)' },
-];
+import { LANGUAGE_OPTIONS, languageLabel } from '../lib/languages';
 
 export default function Settings() {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
@@ -41,6 +14,11 @@ export default function Settings() {
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
   const [langSuccess, setLangSuccess] = useState('');
+  const [siteTitle, setSiteTitle] = useState('');
+  const [siteTitleLanguage, setSiteTitleLanguage] = useState('en');
+  const [siteTitleLoading, setSiteTitleLoading] = useState(false);
+  const [siteTitleError, setSiteTitleError] = useState('');
+  const [siteTitleSuccess, setSiteTitleSuccess] = useState('');
 
   useEffect(() => {
     api.getI18nSettings()
@@ -49,9 +27,20 @@ export default function Settings() {
           default_language: settings.default_language,
           supported_languages: settings.supported_languages,
         });
+        setSiteTitleLanguage(settings.default_language);
+        return api.getEntityTranslation('site', 'global', settings.default_language)
+          .then((row) => setSiteTitle(typeof row?.title === 'string' ? row.title : ''))
+          .catch(() => setSiteTitle(''));
       })
       .catch((e) => setLangError(String(e)));
   }, []);
+
+  useEffect(() => {
+    if (!langForm.supported_languages.includes(siteTitleLanguage)) return;
+    api.getEntityTranslation('site', 'global', siteTitleLanguage)
+      .then((row) => setSiteTitle(typeof row?.title === 'string' ? row.title : ''))
+      .catch(() => setSiteTitle(''));
+  }, [siteTitleLanguage, langForm.supported_languages]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +90,28 @@ export default function Settings() {
       setLangError(String(e));
     } finally {
       setLangLoading(false);
+    }
+  }
+
+  async function handleSaveSiteTitle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!langForm.supported_languages.includes(siteTitleLanguage)) {
+      setSiteTitleError('Choose a supported language first.');
+      return;
+    }
+    setSiteTitleLoading(true);
+    setSiteTitleError('');
+    setSiteTitleSuccess('');
+    try {
+      await api.updateEntityTranslation('site', 'global', {
+        language: siteTitleLanguage,
+        title: siteTitle,
+      });
+      setSiteTitleSuccess('Website title updated successfully.');
+    } catch (e) {
+      setSiteTitleError(String(e));
+    } finally {
+      setSiteTitleLoading(false);
     }
   }
 
@@ -156,10 +167,9 @@ export default function Settings() {
               onChange={(e) => setLangForm((f) => ({ ...f, default_language: e.target.value }))}
             >
               {langForm.supported_languages.map((code) => {
-                const item = LANGUAGE_OPTIONS.find((l) => l.code === code);
                 return (
                   <option key={code} value={code}>
-                    {item ? `${item.name} (${code})` : code}
+                    {languageLabel(code)}
                   </option>
                 );
               })}
@@ -197,6 +207,38 @@ export default function Settings() {
           {langSuccess && <p className="text-green-600 text-sm">{langSuccess}</p>}
           <button type="submit" disabled={langLoading} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
             {langLoading ? 'Saving…' : 'Save Language Settings'}
+          </button>
+        </form>
+      </div>
+
+      <div className="bg-white border rounded-xl p-6 space-y-4">
+        <h2 className="font-semibold">Website title</h2>
+        <p className="text-sm text-gray-500">
+          This is the name shown in the site header, footer, and browser title. Choose a language and save the title for that locale.
+        </p>
+        <form onSubmit={handleSaveSiteTitle} className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Translation language</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={siteTitleLanguage}
+              onChange={(e) => setSiteTitleLanguage(e.target.value)}
+            >
+              {langForm.supported_languages.map((code) => (
+                <option key={code} value={code}>
+                  {languageLabel(code)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Website title</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={siteTitle} onChange={(e) => setSiteTitle(e.target.value)} />
+          </div>
+          {siteTitleError && <p className="text-red-500 text-sm">{siteTitleError}</p>}
+          {siteTitleSuccess && <p className="text-green-600 text-sm">{siteTitleSuccess}</p>}
+          <button type="submit" disabled={siteTitleLoading} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60">
+            {siteTitleLoading ? 'Saving…' : 'Save Website Title'}
           </button>
         </form>
       </div>

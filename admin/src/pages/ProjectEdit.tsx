@@ -17,6 +17,7 @@ import ImportBundleModal from '../components/ImportBundleModal';
 import PublishModal from '../components/PublishModal';
 import { buildBundle, downloadBlob, type BundleProgress } from '../lib/bundle';
 import TagsEditor from '../components/TagsEditor';
+import { languageLabel } from '../lib/languages';
 
 function formatTimestamp(ms: number) {
   const total = ms / 1000;
@@ -569,7 +570,7 @@ export default function ProjectEdit() {
             onDragOver={(e) => onStepDragOver(e, realIndex)}
             onDragLeave={() => setDragOverStep(null)}
             onDrop={(e) => onStepDrop(e, realIndex)}
-            className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === realIndex && dragStep.current !== realIndex ? 'border-blue-400 shadow-md' : ''} ${step.hidden ? 'opacity-50' : ''}`}
+            className={`bg-white border rounded-xl overflow-hidden transition-all ${dragOverStep === realIndex && dragStep.current !== realIndex ? 'border-blue-400 shadow-md' : ''} ${step.hidden ? 'border-amber-200 bg-amber-50/30' : ''}`}
           >
             {/* Step header — click to expand/collapse */}
             <div
@@ -671,7 +672,7 @@ export default function ProjectEdit() {
                 {translationLanguage && (
                   <div className="border rounded-lg p-3 bg-indigo-50/40">
                     <label className="block text-xs font-medium text-indigo-800 mb-1">
-                      Translated step title ({translationLanguage})
+                      Translated step title ({languageLabel(translationLanguage)})
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -925,7 +926,7 @@ export default function ProjectEdit() {
         >
           <option value="">Select language</option>
           {supportedLanguages.filter((l) => l !== defaultLanguage).map((lang) => (
-            <option key={lang} value={lang}>{lang}</option>
+            <option key={lang} value={lang}>{languageLabel(lang)}</option>
           ))}
         </select>
       </div>
@@ -943,7 +944,7 @@ export default function ProjectEdit() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Translated overview/description</label>
-            <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-y" rows={4} value={translation.description} onChange={(e) => setTranslation((t) => ({ ...t, description: e.target.value }))} />
+            <HtmlEditor value={translation.description} onChange={(v) => setTranslation((t) => ({ ...t, description: v }))} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Translated SEO description</label>

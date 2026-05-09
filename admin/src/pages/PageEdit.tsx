@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, type Page, type ContentElement } from '../api';
 import ContentElementEditor from '../components/ContentElementEditor';
+import { languageLabel } from '../lib/languages';
 
 export default function PageEdit() {
   const { id } = useParams();
@@ -162,7 +163,7 @@ export default function PageEdit() {
             >
               <option value="">Select language</option>
               {supportedLanguages.filter((l) => l !== defaultLanguage).map((lang) => (
-                <option key={lang} value={lang}>{lang}</option>
+                <option key={lang} value={lang}>{languageLabel(lang)}</option>
               ))}
             </select>
           </div>
@@ -170,18 +171,18 @@ export default function PageEdit() {
             <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Translated title</label>
-                  <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.title} onChange={(e) => setTranslation((t) => ({ ...t, title: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Translated SEO title</label>
-                  <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_title} onChange={(e) => setTranslation((t) => ({ ...t, seo_title: e.target.value }))} />
-                </div>
+            <label className="block text-sm font-medium mb-1">Translated title</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.title} onChange={(e) => setTranslation((t) => ({ ...t, title: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Translated SEO title</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_title} onChange={(e) => setTranslation((t) => ({ ...t, seo_title: e.target.value }))} />
+          </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Translated SEO description</label>
-                <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_description} onChange={(e) => setTranslation((t) => ({ ...t, seo_description: e.target.value }))} />
-              </div>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_description} onChange={(e) => setTranslation((t) => ({ ...t, seo_description: e.target.value }))} />
+          </div>
               <button onClick={handleSaveTranslation} disabled={translationSaving} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60">
                 {translationSaving ? 'Saving translation…' : 'Save Translation Fields'}
               </button>

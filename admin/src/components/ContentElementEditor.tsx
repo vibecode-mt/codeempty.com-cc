@@ -3,6 +3,7 @@ import { api, type ContentElement, type RenderStyle } from '../api';
 import HtmlEditor from './HtmlEditor';
 import ImageUpload from './ImageUpload';
 import TagsEditor from './TagsEditor';
+import { languageLabel } from '../lib/languages';
 
 const RENDER_STYLE_OPTIONS: { value: RenderStyle; label: string; help: string }[] = [
   { value: 'default', label: 'Default (HTML)', help: 'Treat content as raw HTML — the existing editor.' },
@@ -524,7 +525,7 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
   const [translatedDraft, setTranslatedDraft] = useState('');
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationSaving, setTranslationSaving] = useState(false);
-  const supportsTranslation = el.type === 'title' || el.type === 'description' || el.type === 'prompt_code';
+  const supportsTranslation = el.type === 'title' || el.type === 'description' || el.type === 'prompt_code' || el.type === 'image' || el.type === 'url' || el.type === 'user_comment';
 
   // Re-sync derived state when the element's content/type changes from outside
   // (e.g., after a +frame conversion description → image). Without this, the
@@ -599,7 +600,7 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
 
   return (
     <>
-      <div className={`flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing ${el.hidden ? 'opacity-50' : ''}`}>
+        <div className={`flex items-center gap-2 px-3 py-2 bg-gray-50 border-b cursor-grab active:cursor-grabbing ${el.hidden ? 'border-amber-200 bg-amber-50/40' : ''}`}>
         <span className="text-gray-300 select-none" title="Drag to reorder">⠿</span>
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 w-24 shrink-0">{el.type}</span>
         {showRenderBadge && (
@@ -711,19 +712,57 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
           {translationLanguage && supportsTranslation && (
             <div className="space-y-2 border-t pt-3 mt-3">
               <div className="text-xs font-medium text-indigo-700">
-                Translation ({translationLanguage})
+                Translation ({languageLabel(translationLanguage)})
               </div>
               {translationLoading ? (
                 <p className="text-xs text-gray-500">Loading translation…</p>
               ) : (
                 <>
-                  <textarea
-                    className="w-full border rounded px-3 py-1.5 text-sm resize-y"
-                    rows={4}
-                    value={translatedDraft}
-                    onChange={(e) => setTranslatedDraft(e.target.value)}
-                    placeholder="Enter translated text for this element"
-                  />
+                  {el.type === 'description' ? (
+                    (el.render_style ?? 'default') === 'default' ? (
+                      <HtmlEditor value={translatedDraft} onChange={setTranslatedDraft} />
+                    ) : (
+                      <textarea
+                        className="w-full border rounded px-3 py-1.5 text-sm resize-y font-mono"
+                        rows={6}
+                        value={translatedDraft}
+                        onChange={(e) => setTranslatedDraft(e.target.value)}
+                        placeholder="Translated markdown text"
+                      />
+                    )
+                  ) : el.type === 'image' ? (
+                    <HtmlEditor value={translatedDraft} onChange={setTranslatedDraft} />
+                  ) : el.type === 'title' ? (
+                    <input
+                      className="w-full border rounded px-3 py-1.5 text-sm"
+                      value={translatedDraft}
+                      onChange={(e) => setTranslatedDraft(e.target.value)}
+                      placeholder="Translated title"
+                    />
+                  ) : el.type === 'url' ? (
+                    <input
+                      className="w-full border rounded px-3 py-1.5 text-sm"
+                      value={translatedDraft}
+                      onChange={(e) => setTranslatedDraft(e.target.value)}
+                      placeholder="Translated label"
+                    />
+                  ) : el.type === 'user_comment' ? (
+                    <textarea
+                      className="w-full border rounded px-3 py-1.5 text-sm resize-y"
+                      rows={4}
+                      value={translatedDraft}
+                      onChange={(e) => setTranslatedDraft(e.target.value)}
+                      placeholder="Translated comment text"
+                    />
+                  ) : (
+                    <textarea
+                      className="w-full border rounded px-3 py-1.5 text-sm resize-y"
+                      rows={4}
+                      value={translatedDraft}
+                      onChange={(e) => setTranslatedDraft(e.target.value)}
+                      placeholder="Enter translated text for this element"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={saveTranslation}

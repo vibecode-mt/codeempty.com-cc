@@ -417,6 +417,16 @@ export interface TranslationExport {
     source: { content: string };
     translation: { content: string | null } | null;
   }>;
+  forms: Array<{
+    id: string;
+    source: { name: string; success_message: string; fields_json: string };
+    translation: { name: string | null; success_message: string | null; fields_json: string | null } | null;
+  }>;
+  site: {
+    id: string;
+    source: { title: string };
+    translation: { title: string | null } | null;
+  };
 }
 
 export interface TranslationImport {
@@ -426,6 +436,8 @@ export interface TranslationImport {
   blog_entries?: Array<{ id: string; title?: string | null; seo_title?: string | null; seo_description?: string | null }>;
   project_steps?: Array<{ id: string; title?: string | null }>;
   content_elements?: Array<{ id: string; content?: string | null }>;
+  forms?: Array<{ id: string; name?: string | null; success_message?: string | null; fields_json?: string | null }>;
+  site?: { title?: string | null };
 }
 
-export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element';
+export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element' | 'form' | 'site';

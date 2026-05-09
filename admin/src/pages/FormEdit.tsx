@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type FormField, type FormDefinition, type FormSubmission } from '../api';
+import { languageLabel } from '../lib/languages';
 
 const FIELD_TYPES: FormField['type'][] = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'];
 
@@ -17,6 +18,13 @@ export default function FormEdit() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
+  const [defaultLanguage, setDefaultLanguage] = useState('en');
+  const [translationLanguage, setTranslationLanguage] = useState('');
+  const [translatedName, setTranslatedName] = useState('');
+  const [translatedSuccessMessage, setTranslatedSuccessMessage] = useState('');
+  const [translatedFields, setTranslatedFields] = useState<FormField[]>([]);
+  const [translationSaving, setTranslationSaving] = useState(false);
 
   const [form, setForm] = useState<FormDefinition>({
     id: '',
@@ -48,6 +56,30 @@ export default function FormEdit() {
       .finally(() => setLoading(false));
   }, [id, isNew]);
 
+  useEffect(() => {
+    api.getI18nSettings().then((settings) => {
+      setSupportedLanguages(settings.supported_languages);
+      setDefaultLanguage(settings.default_language);
+      const first = settings.supported_languages.find((l) => l !== settings.default_language) ?? '';
+      setTranslationLanguage(first);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!id || isNew || !translationLanguage) return;
+    api.getEntityTranslation('form', id, translationLanguage)
+      .then((row) => {
+        setTranslatedName(typeof row.name === 'string' ? row.name : '');
+        setTranslatedSuccessMessage(typeof row.success_message === 'string' ? row.success_message : '');
+        setTranslatedFields(buildTranslatedFields(form.fields, typeof row.fields_json === 'string' ? row.fields_json : ''));
+      })
+      .catch(() => {
+        setTranslatedName('');
+        setTranslatedSuccessMessage('');
+        setTranslatedFields(buildTranslatedFields(form.fields, ''));
+      });
+  }, [id, isNew, translationLanguage, form.fields]);
+
   async function save() {
     setSaving(true);
     setSaved(false);
@@ -65,6 +97,21 @@ export default function FormEdit() {
       setError(String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveTranslation() {
+    if (!id || !translationLanguage) return;
+    setTranslationSaving(true);
+    try {
+      await api.updateEntityTranslation('form', id, {
+        language: translationLanguage,
+        name: translatedName,
+        success_message: translatedSuccessMessage,
+        fields_json: JSON.stringify(translatedFields),
+      });
+    } finally {
+      setTranslationSaving(false);
     }
   }
 
@@ -233,6 +280,84 @@ export default function FormEdit() {
         </div>
       </div>
 
+      {!!id && supportedLanguages.some((l) => l !== defaultLanguage) && (
+        <div className="bg-white border rounded-xl p-6 space-y-4">
+          <h2 className="font-semibold">Translations</h2>
+          <p className="text-sm text-gray-500">
+            Translate the form title, success message, and each field label or helper text here. Field option labels keep the same values but can be renamed for each language.
+          </p>
+          <div>
+            <label className="block text-sm font-medium mb-1">Translation language</label>
+            <select className="w-full border rounded px-3 py-2 text-sm" value={translationLanguage} onChange={(e) => setTranslationLanguage(e.target.value)}>
+              <option value="">Select language</option>
+              {supportedLanguages.filter((l) => l !== defaultLanguage).map((lang) => (
+                <option key={lang} value={lang}>{languageLabel(lang)}</option>
+              ))}
+            </select>
+          </div>
+          {translationLanguage && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Translated form name</label>
+                  <input className="w-full border rounded px-3 py-2 text-sm" value={translatedName} onChange={(e) => setTranslatedName(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Translated success message</label>
+                  <input className="w-full border rounded px-3 py-2 text-sm" value={translatedSuccessMessage} onChange={(e) => setTranslatedSuccessMessage(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {translatedFields.map((field, idx) => (
+                  <div key={field.key} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium text-sm">{form.fields[idx]?.label} <span className="text-xs text-gray-400 font-mono">({field.key})</span></div>
+                      <div className="text-xs text-gray-400">{field.type}</div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Translated label</label>
+                        <input className="w-full border rounded px-3 py-2 text-sm" value={field.label} onChange={(e) => setTranslatedFields((prev) => prev.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))} />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Translated placeholder</label>
+                        <input className="w-full border rounded px-3 py-2 text-sm" value={field.placeholder ?? ''} onChange={(e) => setTranslatedFields((prev) => prev.map((x, i) => i === idx ? { ...x, placeholder: e.target.value } : x))} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Translated help text</label>
+                      <input className="w-full border rounded px-3 py-2 text-sm" value={field.help_text ?? ''} onChange={(e) => setTranslatedFields((prev) => prev.map((x, i) => i === idx ? { ...x, help_text: e.target.value } : x))} />
+                    </div>
+                    {form.fields[idx]?.type === 'select' && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Translated options (label only)</label>
+                        <textarea
+                          className="w-full border rounded px-3 py-2 text-xs font-mono"
+                          rows={3}
+                          value={(field.options ?? []).map((o) => `${o.label}|${o.value}`).join('\n')}
+                          onChange={(e) => {
+                            const options = e.target.value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+                              const [label, value] = line.includes('|') ? line.split('|', 2) : [line, line];
+                              return { label: label.trim(), value: value.trim() };
+                            });
+                            setTranslatedFields((prev) => prev.map((x, i) => i === idx ? { ...x, options } : x));
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={saveTranslation} disabled={translationSaving} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60">
+                {translationSaving ? 'Saving translation…' : 'Save Translation Fields'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {!isNew && (
         <div className="bg-white border rounded-xl p-6 space-y-3">
           <div className="flex items-center justify-between">
@@ -262,4 +387,34 @@ export default function FormEdit() {
       )}
     </div>
   );
+}
+
+function buildTranslatedFields(baseFields: FormField[], raw: string): FormField[] {
+  let parsed: Array<Partial<FormField>> = [];
+  try {
+    const json = JSON.parse(raw) as unknown;
+    if (Array.isArray(json)) parsed = json as Array<Partial<FormField>>;
+  } catch {
+    parsed = [];
+  }
+  const map = new Map(parsed.map((f) => [String(f.key ?? ''), f]));
+  return baseFields.map((field) => {
+    const tr = map.get(field.key);
+    const translatedOptions = Array.isArray(tr?.options)
+      ? (tr!.options as Array<{ label?: unknown; value?: unknown }>)
+      : [];
+    return {
+      ...field,
+      label: typeof tr?.label === 'string' ? tr.label : '',
+      placeholder: typeof tr?.placeholder === 'string' ? tr.placeholder : '',
+      help_text: typeof tr?.help_text === 'string' ? tr.help_text : '',
+      options: (field.options ?? []).map((opt) => {
+        const trOpt = translatedOptions.find((o) => String(o.value ?? '') === opt.value);
+        return {
+          label: typeof trOpt?.label === 'string' ? trOpt.label : '',
+          value: opt.value,
+        };
+      }),
+    };
+  });
 }

@@ -1,7 +1,7 @@
 import type { Env, Project, BlogEntry, ContentElement, WidgetContent, WidgetKind, FormDefinition, FormSubmission } from '../types';
 import { escHtml } from './layout';
 import { ensureFormsTables, parseFormConfig } from '../forms';
-import { applyBlogEntryTranslations, applyProjectTranslations } from '../i18n';
+import { applyBlogEntryTranslations, applyFormTranslation, applyProjectTranslations } from '../i18n';
 
 // Widgets are content elements whose `content` field is JSON like
 // { "kind": "project_list" }. Rendering needs DB access, so this module is
@@ -83,7 +83,7 @@ async function renderBlogList(env: Env, language: string): Promise<string> {
   </div>`;
 }
 
-async function renderFormWidget(env: Env, content: string): Promise<string> {
+async function renderFormWidget(env: Env, content: string, language: string): Promise<string> {
   await ensureFormsTables(env);
   const cfg = parseWidgetConfig(content);
   const formSlug = (cfg.form_slug || cfg.form || '').trim();
@@ -92,7 +92,7 @@ async function renderFormWidget(env: Env, content: string): Promise<string> {
   }
   const row = await env.DB.prepare('SELECT * FROM forms WHERE slug = ? AND published = 1').bind(formSlug).first<FormDefinition>();
   if (!row) return `<div class="content-el content-el-widget widget-form"><p>Form "${escHtml(formSlug)}" not found.</p></div>`;
-  const form = parseFormConfig(row);
+  const form = await applyFormTranslation(env, parseFormConfig(row), language);
   const fieldsHtml = form.fields.map((f) => {
     const required = f.required ? ' required' : '';
     const help = f.help_text ? `<div class="contact-help">${escHtml(f.help_text)}</div>` : '';
@@ -315,7 +315,7 @@ export async function renderWidgets(
     if (html === undefined) {
       if (cfg.kind === 'project_list') html = await renderProjectList(env, language);
       else if (cfg.kind === 'blog_list') html = await renderBlogList(env, language);
-      else if (cfg.kind === 'form') html = await renderFormWidget(env, el.content);
+      else if (cfg.kind === 'form') html = await renderFormWidget(env, el.content, language);
       else html = await renderFormDataWidget(env, el.content);
       cache.set(cacheKey, html);
     }

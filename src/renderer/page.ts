@@ -1,7 +1,7 @@
 import type { Env, Page, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElementsWithWidgets } from './content';
-import { applyContentElementTranslations, applyPageTranslations } from '../i18n';
+import { applyContentElementTranslations, applyPageTranslations, getSiteTitle } from '../i18n';
 
 export async function renderPage(slug: string, env: Env, language = 'en'): Promise<Response> {
   return renderPageBy('slug', slug, env, language);
@@ -39,6 +39,7 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, langu
   if (!page) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
 
   const scripts = scriptsResult.results;
+  const siteTitle = await getSiteTitle(env, language);
   const translatedPages = await applyPageTranslations(env, [page], language);
   const localizedPage = translatedPages[0] ?? page;
 
@@ -60,7 +61,7 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, langu
     <div${showHeading ? ' style="margin-top:1.5rem"' : ''}>${elementsHtml}</div>
   `;
 
-  const titleSuffix = isHome ? 'CodeEmpty' : `${localizedPage.seo_title || localizedPage.title} — CodeEmpty`;
+  const titleSuffix = isHome ? siteTitle : `${localizedPage.seo_title || localizedPage.title} — ${siteTitle}`;
   const html = renderLayout({
     title: titleSuffix,
     body,
@@ -68,6 +69,7 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, langu
     navPages,
     language,
     metaDescription: localizedPage.seo_description,
+    siteTitle,
   });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(

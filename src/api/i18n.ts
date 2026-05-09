@@ -77,11 +77,20 @@ i18nRoutes.get('/translations/export', requireOAuthOrSession, async (c) => {
     ).bind(language).all<{ content_element_id: string; content: string | null }>(),
   ]);
 
+  const forms = await c.env.DB.prepare('SELECT form_id, name, success_message, fields_json FROM form_translations WHERE language = ?')
+    .bind(language)
+    .all<{ form_id: string; name: string | null; success_message: string | null; fields_json: string | null }>();
+  const site = await c.env.DB.prepare('SELECT site_key, title FROM site_translations WHERE language = ?')
+    .bind(language)
+    .all<{ site_key: string; title: string | null }>();
+
   const projectMap = new Map(projectTr.results.map((r) => [r.project_id, r]));
   const pageMap = new Map(pageTr.results.map((r) => [r.page_id, r]));
   const blogMap = new Map(blogTr.results.map((r) => [r.blog_entry_id, r]));
   const stepMap = new Map(stepTr.results.map((r) => [r.step_id, r]));
   const elementMap = new Map(elementTr.results.map((r) => [r.content_element_id, r]));
+  const formMap = new Map(forms.results.map((r) => [r.form_id, r]));
+  const siteMap = new Map(site.results.map((r) => [r.site_key, r]));
 
   return c.json({
     source_language: settings.default_language,
@@ -132,6 +141,22 @@ i18nRoutes.get('/translations/export', requireOAuthOrSession, async (c) => {
       source: { content: e.content },
       translation: elementMap.get(e.id) ?? null,
     })),
+    forms: (await c.env.DB.prepare('SELECT id, name, success_message, fields_json FROM forms').all<{
+      id: string; name: string; success_message: string; fields_json: string;
+    }>()).results.map((f) => ({
+      id: f.id,
+      source: {
+        name: f.name,
+        success_message: f.success_message,
+        fields_json: f.fields_json,
+      },
+      translation: formMap.get(f.id) ?? null,
+    })),
+    site: {
+      id: 'global',
+      source: { title: 'CodeEmpty' },
+      translation: siteMap.get('global') ?? null,
+    },
   });
 });
 
@@ -144,6 +169,8 @@ i18nRoutes.post('/translations/import', requireAdmin, async (c) => {
     blog_entries?: Array<{ id: string; title?: string | null; seo_title?: string | null; seo_description?: string | null }>;
     project_steps?: Array<{ id: string; title?: string | null }>;
     content_elements?: Array<{ id: string; content?: string | null }>;
+    forms?: Array<{ id: string; name?: string | null; success_message?: string | null; fields_json?: string | null }>;
+    site?: { title?: string | null };
   }>();
 
   const language = normalizeLanguageCode(body.language);
@@ -226,6 +253,38 @@ i18nRoutes.post('/translations/import', requireAdmin, async (c) => {
     );
   }
 
+  for (const item of body.forms ?? []) {
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO form_translations (form_id, language, name, success_message, fields_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(form_id, language) DO UPDATE SET
+           name = excluded.name,
+           success_message = excluded.success_message,
+           fields_json = excluded.fields_json,
+           updated_at = excluded.updated_at`,
+      ).bind(
+        item.id,
+        language,
+        normalizeField(item.name),
+        normalizeField(item.success_message),
+        normalizeField(item.fields_json),
+      ),
+    );
+  }
+
+  if (body.site) {
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO site_translations (site_key, language, title, updated_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(site_key, language) DO UPDATE SET
+           title = excluded.title,
+           updated_at = excluded.updated_at`,
+      ).bind('global', language, normalizeField(body.site.title)),
+    );
+  }
+
   if (stmts.length > 0) await c.env.DB.batch(stmts);
   if (stmts.length > 0) await invalidateAllCaches(c.env);
 
@@ -298,6 +357,12 @@ function getEntityConfig(entity: string): EntityConfig | null {
   }
   if (entity === 'content_element') {
     return { table: 'content_element_translations', idColumn: 'content_element_id', fields: ['content'] };
+  }
+  if (entity === 'form') {
+    return { table: 'form_translations', idColumn: 'form_id', fields: ['name', 'success_message', 'fields_json'] };
+  }
+  if (entity === 'site') {
+    return { table: 'site_translations', idColumn: 'site_key', fields: ['title'] };
   }
   return null;
 }
