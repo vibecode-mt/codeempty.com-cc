@@ -311,12 +311,11 @@ function hasDeliveryTarget(delivery: ReturnType<typeof parseFormConfig>['deliver
 }
 
 async function invalidateFormWidgetCaches(env: Env) {
-  const [formPages, dataPages, contactPages] = await Promise.all([
+  const [formPages, dataPages] = await Promise.all([
     pagesWithWidget(env, 'form'),
     pagesWithWidget(env, 'form_data'),
-    pagesWithWidget(env, 'contact'),
   ]);
-  for (const slug of new Set([...formPages, ...dataPages, ...contactPages])) {
+  for (const slug of new Set([...formPages, ...dataPages])) {
     const key = `page:${slug}`;
     await env.PAGES_KV.delete(key);
     await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
