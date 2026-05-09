@@ -207,6 +207,12 @@ export const api = {
   // Cache
   invalidateAll: () => req('POST', '/cache/invalidate-all'),
 
+  // i18n
+  getI18nSettings: () => req<SiteI18nSettings>('GET', '/i18n/settings'),
+  updateI18nSettings: (b: SiteI18nSettings) => req<SiteI18nSettings>('PUT', '/i18n/settings', b),
+  exportTranslations: (language: string) => req<TranslationExport>('GET', `/i18n/translations/export?language=${encodeURIComponent(language)}`),
+  importTranslations: (b: TranslationImport) => req<{ ok: boolean; language: string; upserts: number }>('POST', '/i18n/translations/import', b),
+
   // Generic forms
   listForms: () => req<FormDefinition[]>('GET', '/forms'),
   listAllFormSubmissions: () => req<FormSubmission[]>('GET', '/forms/submissions'),
@@ -226,6 +232,8 @@ export const api = {
 // Shared types (duplicated from src/types.ts for the admin bundle)
 export interface Project {
   id: string; slug: string; title: string; description: string;
+  seo_title: string | null;
+  seo_description: string | null;
   image_url: string | null;
   video_key: string | null; video_url: string | null;
   youtube_url: string | null;
@@ -240,12 +248,12 @@ export interface ProjectStep {
   created_at: string; updated_at: string;
 }
 export interface Page {
-  id: string; slug: string; title: string; published: number; show_in_menu: number;
+  id: string; slug: string; title: string; seo_title: string | null; seo_description: string | null; published: number; show_in_menu: number;
   is_home: number;
   created_at: string; updated_at: string;
 }
 export interface BlogEntry {
-  id: string; slug: string; title: string; entry_date: string; published: number;
+  id: string; slug: string; title: string; seo_title: string | null; seo_description: string | null; entry_date: string; published: number;
   created_at: string; updated_at: string;
 }
 export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
@@ -362,4 +370,56 @@ export interface FormSubmission {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SiteI18nSettings {
+  default_language: string;
+  supported_languages: string[];
+}
+
+export interface TranslationExport {
+  source_language: string;
+  target_language: string;
+  projects: Array<{
+    id: string;
+    slug: string;
+    source: { title: string; description: string; seo_title: string | null; seo_description: string | null };
+    translation: { title: string | null; description: string | null; seo_title: string | null; seo_description: string | null } | null;
+  }>;
+  pages: Array<{
+    id: string;
+    slug: string;
+    source: { title: string; seo_title: string | null; seo_description: string | null };
+    translation: { title: string | null; seo_title: string | null; seo_description: string | null } | null;
+  }>;
+  blog_entries: Array<{
+    id: string;
+    slug: string;
+    entry_date: string;
+    source: { title: string; seo_title: string | null; seo_description: string | null };
+    translation: { title: string | null; seo_title: string | null; seo_description: string | null } | null;
+  }>;
+  project_steps: Array<{
+    id: string;
+    project_id: string;
+    source: { title: string };
+    translation: { title: string | null } | null;
+  }>;
+  content_elements: Array<{
+    id: string;
+    parent_type: string;
+    parent_id: string;
+    type: string;
+    source: { content: string };
+    translation: { content: string | null } | null;
+  }>;
+}
+
+export interface TranslationImport {
+  language: string;
+  projects?: Array<{ id: string; title?: string | null; description?: string | null; seo_title?: string | null; seo_description?: string | null }>;
+  pages?: Array<{ id: string; title?: string | null; seo_title?: string | null; seo_description?: string | null }>;
+  blog_entries?: Array<{ id: string; title?: string | null; seo_title?: string | null; seo_description?: string | null }>;
+  project_steps?: Array<{ id: string; title?: string | null }>;
+  content_elements?: Array<{ id: string; content?: string | null }>;
 }

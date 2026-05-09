@@ -1,6 +1,7 @@
 import type { Env, Project, BlogEntry, ContentElement, WidgetContent, WidgetKind, FormDefinition, FormSubmission } from '../types';
 import { escHtml } from './layout';
 import { ensureFormsTables, parseFormConfig } from '../forms';
+import { applyBlogEntryTranslations, applyProjectTranslations } from '../i18n';
 
 // Widgets are content elements whose `content` field is JSON like
 // { "kind": "project_list" }. Rendering needs DB access, so this module is
@@ -32,12 +33,13 @@ function parseWidgetConfig(content: string): Record<string, string> {
   }
 }
 
-async function renderProjectList(env: Env): Promise<string> {
+async function renderProjectList(env: Env, language: string): Promise<string> {
   const projects = await env.DB.prepare(
     'SELECT * FROM projects WHERE published = 1 ORDER BY sort_order ASC, created_at ASC',
   ).all<Project>();
+  const translated = await applyProjectTranslations(env, projects.results, language);
 
-  const cards = projects.results
+  const cards = translated
     .map(
       (p) => `<a class="project-card" href="/projects/${escHtml(p.slug)}">
         ${p.image_url ? `<img src="${escHtml(p.image_url)}" alt="${escHtml(p.title)}" loading="lazy">` : ''}
@@ -54,13 +56,14 @@ async function renderProjectList(env: Env): Promise<string> {
   </div>`;
 }
 
-async function renderBlogList(env: Env): Promise<string> {
+async function renderBlogList(env: Env, language: string): Promise<string> {
   const entries = await env.DB.prepare(
     'SELECT * FROM blog_entries WHERE published = 1 ORDER BY entry_date DESC',
   ).all<BlogEntry>();
+  const translated = await applyBlogEntryTranslations(env, entries.results, language);
 
   const groups = new Map<string, BlogEntry[]>();
-  for (const entry of entries.results) {
+  for (const entry of translated) {
     const date = entry.entry_date.slice(0, 10);
     if (!groups.has(date)) groups.set(date, []);
     groups.get(date)!.push(entry);
@@ -288,7 +291,11 @@ function formatDate(iso: string): string {
 // Pre-render every widget content element in `elements` and return a Map keyed
 // by element id → rendered HTML. Unknown widget kinds yield an HTML comment
 // rather than throwing, so a typo in the JSON doesn't take down a page.
-export async function renderWidgets(elements: ContentElement[], env: Env): Promise<Map<string, string>> {
+export async function renderWidgets(
+  elements: ContentElement[],
+  env: Env,
+  language = 'en',
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const widgets = elements.filter((el) => el.type === 'widget');
   if (widgets.length === 0) return out;
@@ -306,8 +313,8 @@ export async function renderWidgets(elements: ContentElement[], env: Env): Promi
     const cacheKey = (cfg.kind === 'form' || cfg.kind === 'form_data') ? `${cfg.kind}:${el.content}` : cfg.kind;
     let html = cache.get(cacheKey);
     if (html === undefined) {
-      if (cfg.kind === 'project_list') html = await renderProjectList(env);
-      else if (cfg.kind === 'blog_list') html = await renderBlogList(env);
+      if (cfg.kind === 'project_list') html = await renderProjectList(env, language);
+      else if (cfg.kind === 'blog_list') html = await renderBlogList(env, language);
       else if (cfg.kind === 'form') html = await renderFormWidget(env, el.content);
       else html = await renderFormDataWidget(env, el.content);
       cache.set(cacheKey, html);

@@ -44,6 +44,8 @@ export interface Project {
   slug: string;
   title: string;
   description: string;
+  seo_title: string | null;
+  seo_description: string | null;
   image_url: string | null;
   video_key: string | null;
   video_url: string | null;
@@ -70,6 +72,8 @@ export interface Page {
   id: string;
   slug: string;
   title: string;
+  seo_title: string | null;
+  seo_description: string | null;
   published: number;
   show_in_menu: number;
   is_home: number;
@@ -81,6 +85,8 @@ export interface BlogEntry {
   id: string;
   slug: string;
   title: string;
+  seo_title: string | null;
+  seo_description: string | null;
   entry_date: string;
   published: number;
   created_at: string;
@@ -255,5 +261,52 @@ export interface PublishJob {
   state_json: string | null;
   created_by: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+export interface SiteI18nSettings {
+  default_language: string;
+  supported_languages: string[];
+}
+
+export interface ProjectTranslation {
+  project_id: string;
+  language: string;
+  title: string | null;
+  description: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  updated_at: string;
+}
+
+export interface PageTranslation {
+  page_id: string;
+  language: string;
+  title: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  updated_at: string;
+}
+
+export interface BlogEntryTranslation {
+  blog_entry_id: string;
+  language: string;
+  title: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  updated_at: string;
+}
+
+export interface ProjectStepTranslation {
+  step_id: string;
+  language: string;
+  title: string | null;
+  updated_at: string;
+}
+
+export interface ContentElementTranslation {
+  content_element_id: string;
+  language: string;
+  content: string | null;
   updated_at: string;
 }

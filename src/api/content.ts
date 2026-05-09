@@ -176,8 +176,13 @@ async function invalidateParentCache(env: Env, parentType: ParentType, parentId:
   }
 
   if (key) {
-    await env.PAGES_KV.delete(key);
-    await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+    const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
+      .bind(`${key}%`)
+      .all<{ cache_key: string }>();
+    await Promise.all([
+      ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
+      env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${key}%`).run(),
+    ]);
     if (parentType === 'blog_entry') await env.PAGES_KV.delete('blog:index');
     if (parentType === 'project_step') await env.PAGES_KV.delete('home');
   }

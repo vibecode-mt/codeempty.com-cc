@@ -8,7 +8,14 @@ export default function BlogEdit() {
   const navigate = useNavigate();
   const isNew = !id;
 
-  const [form, setForm] = useState({ title: '', slug: '', entry_date: new Date().toISOString().slice(0, 10), published: 1 });
+  const [form, setForm] = useState({
+    title: '',
+    seo_title: '',
+    seo_description: '',
+    slug: '',
+    entry_date: new Date().toISOString().slice(0, 10),
+    published: 1,
+  });
   const [elements, setElements] = useState<ContentElement[]>([]);
   const [entryId, setEntryId] = useState<string | null>(id ?? null);
   const [saving, setSaving] = useState(false);
@@ -18,7 +25,14 @@ export default function BlogEdit() {
   useEffect(() => {
     if (id) {
       Promise.all([api.getBlogEntry(id), api.listContent('blog_entry', id)]).then(([e, els]) => {
-        setForm({ title: e.title, slug: e.slug, entry_date: e.entry_date, published: e.published });
+        setForm({
+          title: e.title,
+          seo_title: e.seo_title ?? '',
+          seo_description: e.seo_description ?? '',
+          slug: e.slug,
+          entry_date: e.entry_date,
+          published: e.published,
+        });
         setElements(els);
       });
     }
@@ -65,6 +79,16 @@ export default function BlogEdit() {
         <div>
           <label className="block text-sm font-medium mb-1">Slug</label>
           <input className="w-full border rounded-lg px-3 py-2 text-sm font-mono" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="auto-generated" />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">SEO title</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.seo_title} onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))} placeholder="Optional search/social title" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">SEO description</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={form.seo_description} onChange={(e) => setForm((f) => ({ ...f, seo_description: e.target.value }))} placeholder="Optional description meta tag" />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <input type="checkbox" id="pub" checked={!!form.published} onChange={(e) => setForm((f) => ({ ...f, published: e.target.checked ? 1 : 0 }))} />

@@ -29,9 +29,9 @@ blogRoutes.post('/', requireAdmin, async (c) => {
   const slug = body.slug ?? slugify(body.title) + '-' + body.entry_date;
 
   await c.env.DB.prepare(
-    'INSERT INTO blog_entries (id, slug, title, entry_date, published, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO blog_entries (id, slug, title, seo_title, seo_description, entry_date, published, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(id, slug, body.title, body.entry_date, body.published ?? 1, ts, ts)
+    .bind(id, slug, body.title, body.seo_title ?? null, body.seo_description ?? null, body.entry_date, body.published ?? 1, ts, ts)
     .run();
 
   await invalidateBlogListCaches(c.env);
@@ -64,11 +64,13 @@ blogRoutes.put('/:id', requireAdmin, async (c) => {
     ? slugify(body.slug)
     : existing.slug?.trim() || slugify(resolvedTitle) + '-' + resolvedDate;
   await c.env.DB.prepare(
-    'UPDATE blog_entries SET slug=?, title=?, entry_date=?, published=?, updated_at=? WHERE id=?',
+    'UPDATE blog_entries SET slug=?, title=?, seo_title=?, seo_description=?, entry_date=?, published=?, updated_at=? WHERE id=?',
   )
     .bind(
       slug,
       resolvedTitle,
+      'seo_title' in body ? (body.seo_title ?? null) : existing.seo_title,
+      'seo_description' in body ? (body.seo_description ?? null) : existing.seo_description,
       resolvedDate,
       body.published ?? existing.published,
       now(),
@@ -96,9 +98,14 @@ blogRoutes.delete('/:id', requireAdmin, async (c) => {
 });
 
 async function invalidateBlogCache(env: Env, slug: string) {
-  const key = `blog:${slug}`;
-  await env.PAGES_KV.delete(key);
-  await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+  const keyPrefix = `blog:${slug}`;
+  const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
+    .bind(`${keyPrefix}%`)
+    .all<{ cache_key: string }>();
+  await Promise.all([
+    ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
+    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${keyPrefix}%`).run(),
+  ]);
 }
 
 // Drops the legacy 'blog:index' KV key plus any Page that embeds a blog_list widget.

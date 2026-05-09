@@ -31,10 +31,25 @@ projectRoutes.post('/', requireAdmin, async (c) => {
   const ts = now();
 
   await c.env.DB.prepare(
-    `INSERT INTO projects (id, slug, title, description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO projects (id, slug, title, description, seo_title, seo_description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(id, slug, body.title, body.description ?? '', body.image_url ?? null, body.video_key ?? null, body.video_url ?? null, body.youtube_url?.trim() || null, body.sort_order ?? 0, body.published ?? 1, ts, ts)
+    .bind(
+      id,
+      slug,
+      body.title,
+      body.description ?? '',
+      body.seo_title ?? null,
+      body.seo_description ?? null,
+      body.image_url ?? null,
+      body.video_key ?? null,
+      body.video_url ?? null,
+      body.youtube_url?.trim() || null,
+      body.sort_order ?? 0,
+      body.published ?? 1,
+      ts,
+      ts,
+    )
     .run();
 
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
@@ -67,12 +82,14 @@ projectRoutes.put('/:id', requireAdmin, async (c) => {
   const slug = body.slug?.trim() || existing.slug?.trim() || slugify(resolvedTitle);
   const ts = now();
   await c.env.DB.prepare(
-    `UPDATE projects SET slug=?, title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+    `UPDATE projects SET slug=?, title=?, description=?, seo_title=?, seo_description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
   )
     .bind(
       slug,
       resolvedTitle,
       body.description ?? existing.description,
+      'seo_title' in body ? (body.seo_title ?? null) : existing.seo_title,
+      'seo_description' in body ? (body.seo_description ?? null) : existing.seo_description,
       body.image_url ?? existing.image_url,
       'video_key' in body ? (body.video_key ?? null) : existing.video_key,
       'video_url' in body ? (body.video_url ?? null) : existing.video_url,
@@ -284,10 +301,13 @@ async function resortElementsByTimestamp(env: Env, stepId: string) {
 }
 
 async function invalidateProjectCache(env: Env, slug: string) {
-  const key = `project:${slug}`;
+  const keyPrefix = `project:${slug}`;
+  const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
+    .bind(`${keyPrefix}%`)
+    .all<{ cache_key: string }>();
   await Promise.all([
-    env.PAGES_KV.delete(key),
-    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run(),
+    ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
+    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${keyPrefix}%`).run(),
     invalidateProjectListCaches(env),
   ]);
 }
@@ -885,13 +905,15 @@ async function applySnapshot(
   // Update the project row in place — id and slug are preserved.
   const p = snapshot.project;
   stmts.push(
-    env.DB
-      .prepare(
-        `UPDATE projects SET title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+      env.DB
+        .prepare(
+        `UPDATE projects SET title=?, description=?, seo_title=?, seo_description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
       )
       .bind(
         p.title,
         p.description,
+        p.seo_title ?? null,
+        p.seo_description ?? null,
         p.image_url,
         p.video_key,
         p.video_url,
@@ -1190,11 +1212,13 @@ async function importSnapshot(
     stmts.push(
       env.DB
         .prepare(
-          `UPDATE projects SET title=?, description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
+          `UPDATE projects SET title=?, description=?, seo_title=?, seo_description=?, image_url=?, video_key=?, video_url=?, youtube_url=?, sort_order=?, published=?, updated_at=? WHERE id=?`,
         )
         .bind(
           p.title,
           p.description,
+          p.seo_title ?? null,
+          p.seo_description ?? null,
           p.image_url,
           p.video_key,
           p.video_url,
@@ -1210,14 +1234,16 @@ async function importSnapshot(
     stmts.push(
       env.DB
         .prepare(
-          `INSERT INTO projects (id, slug, title, description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO projects (id, slug, title, description, seo_title, seo_description, image_url, video_key, video_url, youtube_url, sort_order, published, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           destProjectId,
           destSlug,
           p.title,
           p.description ?? '',
+          p.seo_title ?? null,
+          p.seo_description ?? null,
           p.image_url ?? null,
           p.video_key ?? null,
           p.video_url ?? null,

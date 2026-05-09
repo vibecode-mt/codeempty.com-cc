@@ -1,10 +1,12 @@
-import type { CommonScript, Env } from '../types';
+import type { CommonScript, Env, Page } from '../types';
+import { applyPageTranslations } from '../i18n';
 
-export async function fetchNavPages(env: Env): Promise<{ title: string; slug: string }[]> {
+export async function fetchNavPages(env: Env, language = 'en'): Promise<{ title: string; slug: string }[]> {
   const result = await env.DB.prepare(
-    'SELECT title, slug FROM pages WHERE published = 1 AND show_in_menu = 1 ORDER BY title ASC',
-  ).all<{ title: string; slug: string }>();
-  return result.results;
+    'SELECT * FROM pages WHERE published = 1 AND show_in_menu = 1 ORDER BY title ASC',
+  ).all<Page>();
+  const translated = await applyPageTranslations(env, result.results, language);
+  return translated.map((p) => ({ title: p.title, slug: p.slug }));
 }
 
 export function renderLayout(opts: {
@@ -12,6 +14,8 @@ export function renderLayout(opts: {
   body: string;
   scripts: CommonScript[];
   navPages?: { title: string; slug: string }[];
+  language?: string;
+  metaDescription?: string | null;
 }): string {
   const headScripts = opts.scripts
     .filter((s) => s.enabled && s.position === 'head')
@@ -26,11 +30,15 @@ export function renderLayout(opts: {
     .join('\n');
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${escHtml(opts.language ?? 'en')}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${escHtml(opts.title)}</title>
+  ${opts.metaDescription ? `<meta name="description" content="${escHtml(opts.metaDescription)}">` : ''}
+  <meta property="og:title" content="${escHtml(opts.title)}">
+  ${opts.metaDescription ? `<meta property="og:description" content="${escHtml(opts.metaDescription)}">` : ''}
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   ${headScripts}

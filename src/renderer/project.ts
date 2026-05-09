@@ -1,6 +1,11 @@
 import type { Env, Project, ProjectStep, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElement } from './content';
+import {
+  applyContentElementTranslations,
+  applyProjectStepTranslations,
+  applyProjectTranslations,
+} from '../i18n';
 
 function pickNamespacedTags(tags: string | null, prefix: string): string[] {
   if (!tags) return [];
@@ -84,21 +89,23 @@ function extractElementText(el: ContentElement): string {
   }
 }
 
-export async function renderProject(slug: string, env: Env): Promise<Response> {
-  const cacheKey = `project:${slug}`;
+export async function renderProject(slug: string, env: Env, language = 'en'): Promise<Response> {
+  const cacheKey = `project:${slug}:lang:${language}`;
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
   const [project, scriptsResult, navPages] = await Promise.all([
     env.DB.prepare('SELECT * FROM projects WHERE slug = ? AND published = 1').bind(slug).first<Project>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
-    fetchNavPages(env),
+    fetchNavPages(env, language),
   ]);
 
   if (!project) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
 
   const scripts = scriptsResult.results;
-  const youtubeId = extractYoutubeId(project.youtube_url);
+  const translatedProjects = await applyProjectTranslations(env, [project], language);
+  const localizedProject = translatedProjects[0] ?? project;
+  const youtubeId = extractYoutubeId(localizedProject.youtube_url);
 
   const stepsResult = await env.DB.prepare(
     'SELECT * FROM project_steps WHERE project_id = ? AND hidden = 0 ORDER BY sort_order ASC',
@@ -106,7 +113,8 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     .bind(project.id)
     .all<ProjectStep>();
 
-  const steps = stepsResult.results;
+  const translatedSteps = await applyProjectStepTranslations(env, stepsResult.results, language);
+  const steps = translatedSteps;
 
   // Batch all elements in one query.
   const elementsByStep = new Map<string, ContentElement[]>();
@@ -118,7 +126,8 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
       )
       .bind(...steps.map((s) => s.id))
       .all<ContentElement>();
-    for (const el of allEls.results) {
+    const translatedEls = await applyContentElementTranslations(env, allEls.results, language);
+    for (const el of translatedEls) {
       const arr = elementsByStep.get(el.parent_id) ?? [];
       arr.push(el);
       elementsByStep.set(el.parent_id, arr);
@@ -291,7 +300,7 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     showSearch ||
     slideshowImages.length > 0 ||
     steps.length > 5 ||
-    !!project.description;
+    !!localizedProject.description;
 
   const inlineScript = needsScript
     ? `<script>(function(){
@@ -504,31 +513,31 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
   // Hero block: cover image with title overlay (description moved below the
   // image to stay readable for long copy). Falls back to a text-only header
   // when no cover image is set.
-  const hero = project.image_url
+  const hero = localizedProject.image_url
     ? `<header class="project-hero project-hero-image">
-        <img class="project-hero-img" src="${escHtml(project.image_url)}" alt="" decoding="async">
+        <img class="project-hero-img" src="${escHtml(localizedProject.image_url)}" alt="" decoding="async">
         <div class="project-hero-overlay">
           <a class="project-hero-back" href="/">← Projects</a>
-          <h1 class="project-hero-title">${escHtml(project.title)}</h1>
+          <h1 class="project-hero-title">${escHtml(localizedProject.title)}</h1>
         </div>
       </header>`
     : `<header class="project-hero project-hero-text">
         <a class="project-hero-back" href="/">← Projects</a>
-        <h1 class="project-hero-title-plain">${escHtml(project.title)}</h1>
+        <h1 class="project-hero-title-plain">${escHtml(localizedProject.title)}</h1>
       </header>`;
 
   // Posted/updated timestamps. Suppress "Updated" when it equals "Posted".
-  const postedDate = formatDate(project.created_at);
-  const updatedDate = formatDate(project.updated_at);
+  const postedDate = formatDate(localizedProject.created_at);
+  const updatedDate = formatDate(localizedProject.updated_at);
   const datesLine = postedDate
     ? `<div class="project-dates">Posted ${postedDate}${updatedDate && updatedDate !== postedDate ? ` · Updated ${updatedDate}` : ''}</div>`
     : '';
 
   // Collapsible description: clamps to a few lines initially, "more" link
   // expands. Inline JS removes the link when the text is short enough to fit.
-  const descriptionBlock = project.description
+  const descriptionBlock = localizedProject.description
     ? `<div class="project-description" data-collapsed="true">
-        <div class="project-description-text">${project.description}</div>
+        <div class="project-description-text">${localizedProject.description}</div>
         <button type="button" class="project-description-more" aria-expanded="false">more ↓</button>
       </div>`
     : '';
@@ -551,7 +560,14 @@ export async function renderProject(slug: string, env: Env): Promise<Response> {
     ${inlineScript}
   `;
 
-  const html = renderLayout({ title: `${project.title} — CodeEmpty`, body, scripts, navPages });
+  const html = renderLayout({
+    title: `${localizedProject.seo_title || localizedProject.title} — CodeEmpty`,
+    body,
+    scripts,
+    navPages,
+    language,
+    metaDescription: localizedProject.seo_description,
+  });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(
     'INSERT OR REPLACE INTO cache_keys (cache_key, content_hash, cached_at) VALUES (?, ?, datetime(\'now\'))',

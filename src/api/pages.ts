@@ -29,15 +29,36 @@ pageRoutes.post('/', requireAdmin, async (c) => {
 
   if (hasHomeColumn) {
     await c.env.DB.prepare(
-      'INSERT INTO pages (id, slug, title, published, show_in_menu, is_home, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO pages (id, slug, title, seo_title, seo_description, published, show_in_menu, is_home, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-      .bind(id, slug, body.title, body.published ?? 1, body.show_in_menu ?? 0, isHome, ts, ts)
+      .bind(
+        id,
+        slug,
+        body.title,
+        body.seo_title ?? null,
+        body.seo_description ?? null,
+        body.published ?? 1,
+        body.show_in_menu ?? 0,
+        isHome,
+        ts,
+        ts,
+      )
       .run();
   } else {
     await c.env.DB.prepare(
-      'INSERT INTO pages (id, slug, title, published, show_in_menu, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO pages (id, slug, title, seo_title, seo_description, published, show_in_menu, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     )
-      .bind(id, slug, body.title, body.published ?? 1, body.show_in_menu ?? 0, ts, ts)
+      .bind(
+        id,
+        slug,
+        body.title,
+        body.seo_title ?? null,
+        body.seo_description ?? null,
+        body.published ?? 1,
+        body.show_in_menu ?? 0,
+        ts,
+        ts,
+      )
       .run();
   }
 
@@ -76,15 +97,34 @@ pageRoutes.put('/:id', requireAdmin, async (c) => {
 
   if (hasHomeColumn) {
     await c.env.DB.prepare(
-      'UPDATE pages SET slug=?, title=?, published=?, show_in_menu=?, is_home=?, updated_at=? WHERE id=?',
+      'UPDATE pages SET slug=?, title=?, seo_title=?, seo_description=?, published=?, show_in_menu=?, is_home=?, updated_at=? WHERE id=?',
     )
-      .bind(slug, body.title ?? existing.title, body.published ?? existing.published, showInMenu, isHome, now(), id)
+      .bind(
+        slug,
+        body.title ?? existing.title,
+        'seo_title' in body ? (body.seo_title ?? null) : existing.seo_title,
+        'seo_description' in body ? (body.seo_description ?? null) : existing.seo_description,
+        body.published ?? existing.published,
+        showInMenu,
+        isHome,
+        now(),
+        id,
+      )
       .run();
   } else {
     await c.env.DB.prepare(
-      'UPDATE pages SET slug=?, title=?, published=?, show_in_menu=?, updated_at=? WHERE id=?',
+      'UPDATE pages SET slug=?, title=?, seo_title=?, seo_description=?, published=?, show_in_menu=?, updated_at=? WHERE id=?',
     )
-      .bind(slug, body.title ?? existing.title, body.published ?? existing.published, showInMenu, now(), id)
+      .bind(
+        slug,
+        body.title ?? existing.title,
+        'seo_title' in body ? (body.seo_title ?? null) : existing.seo_title,
+        'seo_description' in body ? (body.seo_description ?? null) : existing.seo_description,
+        body.published ?? existing.published,
+        showInMenu,
+        now(),
+        id,
+      )
       .run();
   }
 
@@ -119,9 +159,14 @@ pageRoutes.delete('/:id', requireAdmin, async (c) => {
 });
 
 async function invalidatePageCache(env: Env, slug: string) {
-  const key = `page:${slug}`;
-  await env.PAGES_KV.delete(key);
-  await env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
+  const keyPrefix = `page:${slug}`;
+  const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
+    .bind(`${keyPrefix}%`)
+    .all<{ cache_key: string }>();
+  await Promise.all([
+    ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
+    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${keyPrefix}%`).run(),
+  ]);
 }
 
 async function invalidateHomeCache(env: Env) {

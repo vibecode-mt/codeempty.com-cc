@@ -7,6 +7,7 @@
     "dev": "wrangler pages dev dist --port 8788 --compatibility-date 2024-01-01",
     "dev:admin": "vite build --watch",
     "build": "vite build",
+    "postbuild": "node --input-type=module -e \"import { copyFileSync, mkdirSync } from 'node:fs'; mkdirSync('dist', { recursive: true }); copyFileSync('favicon.ico', 'dist/favicon.ico');\"",
     "deploy": "npm run build && wrangler pages deploy dist",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate": "wrangler d1 migrations apply DB",

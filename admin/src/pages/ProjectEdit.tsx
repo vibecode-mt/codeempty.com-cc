@@ -45,7 +45,17 @@ export default function ProjectEdit() {
   const navigate = useNavigate();
   const isNew = !id;
 
-  const [form, setForm] = useState({ title: '', slug: '', description: '', image_url: '', youtube_url: '', sort_order: 0, published: 1 });
+  const [form, setForm] = useState({
+    title: '',
+    seo_title: '',
+    seo_description: '',
+    slug: '',
+    description: '',
+    image_url: '',
+    youtube_url: '',
+    sort_order: 0,
+    published: 1,
+  });
   // Read-only display: shown in the metadata card footer, never sent on save.
   const [timestamps, setTimestamps] = useState<{ created_at: string | null; updated_at: string | null }>({ created_at: null, updated_at: null });
   const [steps, setSteps] = useState<ProjectStep[]>([]);
@@ -95,7 +105,17 @@ export default function ProjectEdit() {
   useEffect(() => {
     if (id) {
       api.getProject(id).then((p) => {
-        setForm({ title: p.title, slug: p.slug, description: p.description, image_url: p.image_url ?? '', youtube_url: p.youtube_url ?? '', sort_order: p.sort_order, published: p.published });
+        setForm({
+          title: p.title,
+          seo_title: p.seo_title ?? '',
+          seo_description: p.seo_description ?? '',
+          slug: p.slug,
+          description: p.description,
+          image_url: p.image_url ?? '',
+          youtube_url: p.youtube_url ?? '',
+          sort_order: p.sort_order,
+          published: p.published,
+        });
         setTimestamps({ created_at: p.created_at, updated_at: p.updated_at });
         setSteps(p.steps);
         setVideoKey(p.video_key ?? null);
@@ -730,6 +750,26 @@ export default function ProjectEdit() {
               onChange={(v) => setForm((f) => ({ ...f, description: v }))}
             />
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">SEO title</label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={form.seo_title}
+                onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))}
+                placeholder="Optional search/social title"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">SEO description</label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={form.seo_description}
+                onChange={(e) => setForm((f) => ({ ...f, seo_description: e.target.value }))}
+                placeholder="Optional description meta tag"
+              />
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1">Cover Image</label>
             <ImageUpload value={form.image_url} onChange={(url) => setForm((f) => ({ ...f, image_url: url }))} />
@@ -887,6 +927,8 @@ export default function ProjectEdit() {
             api.getProject(newProjectId).then((updated) => {
               setForm({
                 title: updated.title,
+                seo_title: updated.seo_title ?? '',
+                seo_description: updated.seo_description ?? '',
                 slug: updated.slug,
                 description: updated.description,
                 image_url: updated.image_url ?? '',
@@ -915,6 +957,8 @@ export default function ProjectEdit() {
             const updated = await api.getProject(pid);
             setForm({
               title: updated.title,
+              seo_title: updated.seo_title ?? '',
+              seo_description: updated.seo_description ?? '',
               slug: updated.slug,
               description: updated.description,
               image_url: updated.image_url ?? '',

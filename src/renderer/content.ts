@@ -111,7 +111,8 @@ export function renderContentElements(elements: ContentElement[], widgets?: Map<
 export async function renderContentElementsWithWidgets(
   elements: ContentElement[],
   env: Env,
+  language = 'en',
 ): Promise<string> {
-  const widgets = await renderWidgets(elements, env);
+  const widgets = await renderWidgets(elements, env, language);
   return renderContentElements(elements, widgets);
 }
