@@ -7,9 +7,10 @@ export default function Settings() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [langForm, setLangForm] = useState<{ default_language: string; supported_languages: string[] }>({
+  const [langForm, setLangForm] = useState<{ default_language: string; supported_languages: string[]; published_languages: string[] }>({
     default_language: 'en',
     supported_languages: ['en'],
+    published_languages: ['en'],
   });
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
@@ -26,6 +27,9 @@ export default function Settings() {
         setLangForm({
           default_language: settings.default_language,
           supported_languages: settings.supported_languages,
+          published_languages: Array.isArray(settings.published_languages)
+            ? settings.published_languages
+            : [settings.default_language],
         });
         setSiteTitleLanguage(settings.default_language);
         return api.getEntityTranslation('site', 'global', settings.default_language)
@@ -77,13 +81,16 @@ export default function Settings() {
     setLangSuccess('');
     try {
       const supported = Array.from(new Set(langForm.supported_languages));
+      const published = Array.from(new Set(langForm.published_languages.filter((lang) => supported.includes(lang))));
       const updated = await api.updateI18nSettings({
         default_language: langForm.default_language.trim().toLowerCase(),
         supported_languages: supported,
+        published_languages: published,
       });
       setLangForm({
         default_language: updated.default_language,
         supported_languages: updated.supported_languages,
+        published_languages: updated.published_languages,
       });
       setLangSuccess('Languages updated successfully.');
     } catch (e) {
@@ -160,11 +167,17 @@ export default function Settings() {
         </div>
         <form onSubmit={handleSaveLanguages} className="space-y-3">
           <div>
-            <label className="block text-sm font-medium mb-1">Default language code</label>
+            <label className="block text-sm font-medium mb-1">Default language</label>
             <select
               className="w-full border rounded-lg px-3 py-2 text-sm"
               value={langForm.default_language}
-              onChange={(e) => setLangForm((f) => ({ ...f, default_language: e.target.value }))}
+              onChange={(e) =>
+                setLangForm((f) => {
+                  const defaultLanguage = e.target.value;
+                  const published = new Set(f.published_languages);
+                  published.add(defaultLanguage);
+                  return { ...f, default_language: defaultLanguage, published_languages: Array.from(published) };
+                })}
             >
               {langForm.supported_languages.map((code) => {
                 return (
@@ -193,11 +206,49 @@ export default function Settings() {
                           if (!next.has('en')) next.add('en');
                           const supported = Array.from(next);
                           const defaultLanguage = next.has(f.default_language) ? f.default_language : 'en';
-                          return { ...f, supported_languages: supported, default_language: defaultLanguage };
+                          const published = new Set(f.published_languages.filter((code) => next.has(code)));
+                          published.add(defaultLanguage);
+                          return {
+                            ...f,
+                            supported_languages: supported,
+                            default_language: defaultLanguage,
+                            published_languages: Array.from(published),
+                          };
                         });
                       }}
                     />
                     <span>{lang.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">Published for website visitors</label>
+            <p className="text-xs text-gray-500 mb-2">
+              Only published languages appear in the public website language switcher.
+            </p>
+            <div className="space-y-2">
+              {langForm.supported_languages.map((code) => {
+                const isDefault = code === langForm.default_language;
+                const published = langForm.published_languages.includes(code);
+                return (
+                  <label key={code} className="flex items-center justify-between text-sm border rounded-lg px-3 py-2">
+                    <span>{languageLabel(code)}{isDefault ? ' (default)' : ''}</span>
+                    <input
+                      type="checkbox"
+                      checked={published}
+                      disabled={isDefault}
+                      onChange={(e) => {
+                        setLangForm((f) => {
+                          const next = new Set(f.published_languages);
+                          if (e.target.checked) next.add(code);
+                          else next.delete(code);
+                          next.add(f.default_language);
+                          return { ...f, published_languages: Array.from(next) };
+                        });
+                      }}
+                    />
                   </label>
                 );
               })}

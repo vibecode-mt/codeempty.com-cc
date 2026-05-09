@@ -5,6 +5,7 @@ import {
   applyContentElementTranslations,
   applyProjectStepTranslations,
   applyProjectTranslations,
+  getPublishedLanguageOptions,
   getSiteTitle,
 } from '../i18n';
 
@@ -95,10 +96,11 @@ export async function renderProject(slug: string, env: Env, language = 'en'): Pr
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
-  const [project, scriptsResult, navPages] = await Promise.all([
+  const [project, scriptsResult, navPages, languageOptions] = await Promise.all([
     env.DB.prepare('SELECT * FROM projects WHERE slug = ? AND published = 1').bind(slug).first<Project>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
     fetchNavPages(env, language),
+    getPublishedLanguageOptions(env),
   ]);
 
   if (!project) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
@@ -568,6 +570,7 @@ export async function renderProject(slug: string, env: Env, language = 'en'): Pr
     scripts,
     navPages,
     language,
+    languageOptions,
     metaDescription: localizedProject.seo_description,
     siteTitle,
   });

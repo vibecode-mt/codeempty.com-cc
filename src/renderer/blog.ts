@@ -1,17 +1,18 @@
 import type { Env, BlogEntry, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElements } from './content';
-import { applyBlogEntryTranslations, applyContentElementTranslations, getSiteTitle } from '../i18n';
+import { applyBlogEntryTranslations, applyContentElementTranslations, getPublishedLanguageOptions, getSiteTitle } from '../i18n';
 
 export async function renderBlogEntry(slug: string, env: Env, language = 'en'): Promise<Response> {
   const cacheKey = `blog:${slug}:lang:${language}`;
   const cached = await env.PAGES_KV.get(cacheKey);
   if (cached) return new Response(cached, { headers: { 'content-type': 'text/html;charset=utf-8' } });
 
-  const [entry, scriptsResult, navPages] = await Promise.all([
+  const [entry, scriptsResult, navPages, languageOptions] = await Promise.all([
     env.DB.prepare('SELECT * FROM blog_entries WHERE slug = ? AND published = 1').bind(slug).first<BlogEntry>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
     fetchNavPages(env, language),
+    getPublishedLanguageOptions(env),
   ]);
 
   if (!entry) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
@@ -41,6 +42,7 @@ export async function renderBlogEntry(slug: string, env: Env, language = 'en'): 
     scripts,
     navPages,
     language,
+    languageOptions,
     metaDescription: localizedEntry.seo_description,
     siteTitle,
   });

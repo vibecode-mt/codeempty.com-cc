@@ -15,6 +15,7 @@ let schemaReady = false;
 interface SiteI18nSettingsRow {
   default_language: string;
   supported_languages_json: string;
+  published_languages_json: string | null;
 }
 
 const I18N_SCHEMA_STATEMENTS = [
@@ -100,6 +101,14 @@ export function normalizeLanguageCode(input: unknown): string | null {
 }
 
 export function parseSupportedLanguages(input: unknown): string[] {
+  return parseLanguageList(input, true);
+}
+
+function parsePublishedLanguages(input: unknown): string[] {
+  return parseLanguageList(input, false);
+}
+
+function parseLanguageList(input: unknown, includeFallback: boolean): string[] {
   let values: unknown[] = [];
   if (Array.isArray(input)) {
     values = input;
@@ -117,7 +126,7 @@ export function parseSupportedLanguages(input: unknown): string[] {
     const lang = normalizeLanguageCode(value);
     if (lang) out.add(lang);
   }
-  if (!out.has(FALLBACK_LANGUAGE)) out.add(FALLBACK_LANGUAGE);
+  if (includeFallback && !out.has(FALLBACK_LANGUAGE)) out.add(FALLBACK_LANGUAGE);
   return [...out];
 }
 
@@ -132,11 +141,20 @@ async function ensureSeoColumns(env: Env, table: string): Promise<void> {
   }
 }
 
+async function ensureSiteI18nColumns(env: Env): Promise<void> {
+  const info = await env.DB.prepare('PRAGMA table_info(site_i18n_settings)').all<{ name: string }>();
+  const names = new Set(info.results.map((c) => c.name));
+  if (!names.has('published_languages_json')) {
+    await env.DB.prepare(`ALTER TABLE site_i18n_settings ADD COLUMN published_languages_json TEXT NOT NULL DEFAULT '["en"]'`).run();
+  }
+}
+
 export async function ensureI18nSchema(env: Env): Promise<void> {
   if (schemaReady) return;
   for (const sql of I18N_SCHEMA_STATEMENTS) {
     await env.DB.prepare(sql).run();
   }
+  await ensureSiteI18nColumns(env);
   await ensureSeoColumns(env, 'projects');
   await ensureSeoColumns(env, 'pages');
   await ensureSeoColumns(env, 'blog_entries');
@@ -148,45 +166,60 @@ export async function getSiteI18nSettings(env: Env): Promise<SiteI18nSettings> {
   try {
     await ensureI18nSchema(env);
     await env.DB.prepare(
-      'INSERT OR IGNORE INTO site_i18n_settings (id, default_language, supported_languages_json) VALUES (1, ?, ?)',
+      `INSERT OR IGNORE INTO site_i18n_settings (id, default_language, supported_languages_json, published_languages_json)
+       VALUES (1, ?, ?, ?)`,
     )
-      .bind(FALLBACK_LANGUAGE, JSON.stringify([FALLBACK_LANGUAGE]))
+      .bind(FALLBACK_LANGUAGE, JSON.stringify([FALLBACK_LANGUAGE]), JSON.stringify([FALLBACK_LANGUAGE]))
       .run();
 
     row = await env.DB.prepare(
-      'SELECT default_language, supported_languages_json FROM site_i18n_settings WHERE id = 1',
+      'SELECT default_language, supported_languages_json, published_languages_json FROM site_i18n_settings WHERE id = 1',
     ).first<SiteI18nSettingsRow>();
   } catch {
-    return { default_language: FALLBACK_LANGUAGE, supported_languages: [FALLBACK_LANGUAGE] };
+    return { default_language: FALLBACK_LANGUAGE, supported_languages: [FALLBACK_LANGUAGE], published_languages: [FALLBACK_LANGUAGE] };
   }
 
   const supported = parseSupportedLanguages(row?.supported_languages_json ?? [FALLBACK_LANGUAGE]);
   const defaultLanguage = normalizeLanguageCode(row?.default_language) ?? FALLBACK_LANGUAGE;
+  const published = parsePublishedLanguages(row?.published_languages_json ?? supported).filter((lang) => supported.includes(lang));
 
   if (!supported.includes(defaultLanguage)) supported.unshift(defaultLanguage);
-  return { default_language: defaultLanguage, supported_languages: Array.from(new Set(supported)) };
+  if (!published.includes(defaultLanguage)) published.unshift(defaultLanguage);
+  return {
+    default_language: defaultLanguage,
+    supported_languages: Array.from(new Set(supported)),
+    published_languages: Array.from(new Set(published)),
+  };
 }
 
 export async function saveSiteI18nSettings(
   env: Env,
-  input: { default_language?: string; supported_languages?: string[] },
+  input: { default_language?: string; supported_languages?: string[]; published_languages?: string[] },
 ): Promise<SiteI18nSettings> {
   await ensureI18nSchema(env);
   const current = await getSiteI18nSettings(env);
   const supported = parseSupportedLanguages(input.supported_languages ?? current.supported_languages);
   const defaultLanguage = normalizeLanguageCode(input.default_language) ?? current.default_language;
   if (!supported.includes(defaultLanguage)) supported.unshift(defaultLanguage);
-  const deduped = Array.from(new Set(supported));
+  const dedupedSupported = Array.from(new Set(supported));
+  const published = parsePublishedLanguages(input.published_languages ?? current.published_languages)
+    .filter((lang) => dedupedSupported.includes(lang));
+  if (!published.includes(defaultLanguage)) published.unshift(defaultLanguage);
+  const dedupedPublished = Array.from(new Set(published));
 
   await env.DB.prepare(
     `UPDATE site_i18n_settings
-      SET default_language = ?, supported_languages_json = ?, updated_at = datetime('now')
+      SET default_language = ?, supported_languages_json = ?, published_languages_json = ?, updated_at = datetime('now')
       WHERE id = 1`,
   )
-    .bind(defaultLanguage, JSON.stringify(deduped))
+    .bind(defaultLanguage, JSON.stringify(dedupedSupported), JSON.stringify(dedupedPublished))
     .run();
 
-  return { default_language: defaultLanguage, supported_languages: deduped };
+  return {
+    default_language: defaultLanguage,
+    supported_languages: dedupedSupported,
+    published_languages: dedupedPublished,
+  };
 }
 
 function parseAcceptLanguage(header: string | null): string[] {
@@ -216,17 +249,83 @@ function pickSupportedLanguage(candidate: string | null, supported: string[]): s
   return supported.find((lang) => lang === primary || lang.startsWith(`${primary}-`)) ?? null;
 }
 
+function parseCookieValue(header: string | null, key: string): string | null {
+  if (!header) return null;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k !== key) continue;
+    const raw = rest.join('=').trim();
+    if (!raw) return null;
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return null;
+}
+
 export async function resolveLanguageFromRequest(request: Request, env: Env): Promise<string> {
   const settings = await getSiteI18nSettings(env);
+  const publicLanguages = settings.published_languages.filter((lang) => settings.supported_languages.includes(lang));
+  if (!publicLanguages.includes(settings.default_language)) publicLanguages.unshift(settings.default_language);
   const url = new URL(request.url);
-  const requested = pickSupportedLanguage(normalizeLanguageCode(url.searchParams.get('lang')), settings.supported_languages);
+  const requested = pickSupportedLanguage(normalizeLanguageCode(url.searchParams.get('lang')), publicLanguages);
   if (requested) return requested;
+  const cookieLang = pickSupportedLanguage(
+    normalizeLanguageCode(parseCookieValue(request.headers.get('Cookie'), 'site_lang')),
+    publicLanguages,
+  );
+  if (cookieLang) return cookieLang;
 
   for (const candidate of parseAcceptLanguage(request.headers.get('Accept-Language'))) {
-    const matched = pickSupportedLanguage(candidate, settings.supported_languages);
+    const matched = pickSupportedLanguage(candidate, publicLanguages);
     if (matched) return matched;
   }
   return settings.default_language;
+}
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  it: 'Italian',
+  pt: 'Portuguese',
+  nl: 'Dutch',
+  sv: 'Swedish',
+  no: 'Norwegian',
+  da: 'Danish',
+  fi: 'Finnish',
+  pl: 'Polish',
+  cs: 'Czech',
+  tr: 'Turkish',
+  ru: 'Russian',
+  uk: 'Ukrainian',
+  ar: 'Arabic',
+  he: 'Hebrew',
+  hi: 'Hindi',
+  th: 'Thai',
+  vi: 'Vietnamese',
+  id: 'Indonesian',
+  ja: 'Japanese',
+  ko: 'Korean',
+  cn: 'Chinese (Simplified)',
+};
+
+export function languageLabel(code: string): string {
+  const normalized = normalizeLanguageCode(code);
+  if (!normalized) return code;
+  const named = LANGUAGE_LABELS[normalized];
+  return named ? `${named} (${normalized})` : normalized;
+}
+
+export async function getPublishedLanguageOptions(env: Env): Promise<Array<{ code: string; label: string }>> {
+  const settings = await getSiteI18nSettings(env);
+  const options = settings.published_languages.filter((lang) => settings.supported_languages.includes(lang));
+  if (!options.includes(settings.default_language)) options.unshift(settings.default_language);
+  return Array.from(new Set(options)).map((code) => ({ code, label: languageLabel(code) }));
 }
 
 export async function applyProjectTranslations(env: Env, projects: Project[], language: string): Promise<Project[]> {

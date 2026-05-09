@@ -15,6 +15,7 @@ export function renderLayout(opts: {
   scripts: CommonScript[];
   navPages?: { title: string; slug: string }[];
   language?: string;
+  languageOptions?: { code: string; label: string }[];
   metaDescription?: string | null;
   siteTitle?: string;
 }): string {
@@ -29,6 +30,7 @@ export function renderLayout(opts: {
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((s) => s.html_snippet)
     .join('\n');
+  const showLanguageSelector = (opts.languageOptions?.length ?? 0) > 0;
 
   return `<!DOCTYPE html>
 <html lang="${escHtml(opts.language ?? 'en')}">
@@ -49,8 +51,19 @@ export function renderLayout(opts: {
   <header>
     <nav class="nav">
       <a class="nav-brand" href="/">${escHtml(opts.siteTitle ?? 'CodeEmpty')}</a>
-      <div class="nav-links">
-        ${(opts.navPages ?? []).map((p) => `<a href="/${escHtml(p.slug)}">${escHtml(p.title)}</a>`).join('')}
+      <div class="nav-right">
+        <div class="nav-links">
+          ${(opts.navPages ?? []).map((p) => `<a href="/${escHtml(p.slug)}">${escHtml(p.title)}</a>`).join('')}
+        </div>
+        ${showLanguageSelector ? `
+        <label class="lang-switcher" for="site-lang-switcher">
+          <span>Language</span>
+          <select id="site-lang-switcher" aria-label="Select language">
+            ${(opts.languageOptions ?? [])
+              .map((item) => `<option value="${escHtml(item.code)}"${item.code === (opts.language ?? 'en') ? ' selected' : ''}>${escHtml(item.label)}</option>`)
+              .join('')}
+          </select>
+        </label>` : ''}
       </div>
     </nav>
   </header>
@@ -60,6 +73,25 @@ export function renderLayout(opts: {
   <footer class="footer">
     <p>&copy; ${new Date().getFullYear()} ${escHtml(opts.siteTitle ?? 'CodeEmpty')}.com</p>
   </footer>
+  ${showLanguageSelector ? `<script>
+    (function () {
+      var el = document.getElementById('site-lang-switcher');
+      if (!el || !(el instanceof HTMLSelectElement)) return;
+      var persist = function (value) {
+        try { localStorage.setItem('site_lang', value); } catch (e) {}
+        document.cookie = 'site_lang=' + encodeURIComponent(value) + '; Max-Age=31536000; Path=/; SameSite=Lax';
+      };
+      var qp = new URL(window.location.href).searchParams.get('lang');
+      if (qp) persist(qp);
+      el.addEventListener('change', function () {
+        var value = el.value;
+        persist(value);
+        var next = new URL(window.location.href);
+        next.searchParams.set('lang', value);
+        window.location.href = next.toString();
+      });
+    })();
+  </script>` : ''}
   ${bodyScripts}
 </body>
 </html>`;
@@ -76,8 +108,12 @@ a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
 img{max-width:100%;height:auto;display:block}
 .nav{max-width:1100px;margin:0 auto;padding:1rem 1.5rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
 .nav-brand{font-weight:700;font-size:1.25rem;color:#1a1a1a;letter-spacing:-.01em}
+.nav-right{display:flex;align-items:center;gap:1rem}
 .nav-links{display:flex;gap:1.5rem;font-size:.95rem}
 .nav-links a{color:#555}
+.lang-switcher{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#6b7280}
+.lang-switcher select{border:1px solid #d1d5db;border-radius:.4rem;padding:.25rem .45rem;background:#fff;font-size:.85rem;color:#374151}
+.lang-switcher select:focus{outline:2px solid #93c5fd;outline-offset:1px}
 .main{max-width:1100px;margin:0 auto;padding:2rem 1.5rem;min-height:70vh}
 .footer{text-align:center;padding:2rem;color:#888;font-size:.875rem;border-top:1px solid #eee}
 .page-title{font-size:1.55rem;font-weight:700;margin-bottom:.4rem;letter-spacing:-.01em}
@@ -160,6 +196,7 @@ img{max-width:100%;height:auto;display:block}
 .project-hero-text .project-hero-back:hover{color:#1f2937;text-decoration:underline}
 .project-hero-title-plain{font-size:clamp(1.6rem,4vw,2.25rem);font-weight:700;margin:0 0 .75rem;letter-spacing:-.01em}
 @media(max-width:640px){.project-hero{margin-left:-1.5rem;margin-right:-1.5rem}.project-hero-overlay{padding:1rem 1.25rem}}
+@media(max-width:860px){.nav{align-items:flex-start}.nav-right{display:grid;gap:.6rem;justify-items:end}.nav-links{flex-wrap:wrap;justify-content:flex-end}}
 .project-dates{font-size:.8rem;color:#6b7280;margin-bottom:1rem;letter-spacing:.01em}
 .project-description{margin-bottom:1.5rem;font-size:1rem;color:#374151;line-height:1.65}
 .project-description-text{overflow:hidden}

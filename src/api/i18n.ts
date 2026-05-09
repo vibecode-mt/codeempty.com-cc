@@ -21,9 +21,13 @@ i18nRoutes.put('/settings', requireAdmin, async (c) => {
   const defaultLanguage = normalizeLanguageCode(body.default_language);
   if (!defaultLanguage) return c.json({ error: 'default_language is required' }, 400);
   const supportedLanguages = parseSupportedLanguages(body.supported_languages ?? []);
+  const publishedLanguages = Array.isArray(body.published_languages)
+    ? body.published_languages.filter((v): v is string => typeof v === 'string')
+    : [];
   const settings = await saveSiteI18nSettings(c.env, {
     default_language: defaultLanguage,
     supported_languages: supportedLanguages,
+    published_languages: publishedLanguages,
   });
   await invalidateAllCaches(c.env);
   return c.json(settings);

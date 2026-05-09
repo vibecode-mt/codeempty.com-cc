@@ -1,7 +1,7 @@
 import type { Env, Page, ContentElement, CommonScript } from '../types';
 import { renderLayout, fetchNavPages, escHtml } from './layout';
 import { renderContentElementsWithWidgets } from './content';
-import { applyContentElementTranslations, applyPageTranslations, getSiteTitle } from '../i18n';
+import { applyContentElementTranslations, applyPageTranslations, getPublishedLanguageOptions, getSiteTitle } from '../i18n';
 
 export async function renderPage(slug: string, env: Env, language = 'en'): Promise<Response> {
   return renderPageBy('slug', slug, env, language);
@@ -30,10 +30,11 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, langu
       ? 'SELECT * FROM pages WHERE slug = ? AND published = 1'
       : 'SELECT * FROM pages WHERE id = ? AND published = 1';
 
-  const [page, scriptsResult, navPages] = await Promise.all([
+  const [page, scriptsResult, navPages, languageOptions] = await Promise.all([
     env.DB.prepare(sql).bind(value).first<Page>(),
     env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
     fetchNavPages(env, language),
+    getPublishedLanguageOptions(env),
   ]);
 
   if (!page) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
@@ -68,6 +69,7 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, langu
     scripts,
     navPages,
     language,
+    languageOptions,
     metaDescription: localizedPage.seo_description,
     siteTitle,
   });

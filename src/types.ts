@@ -267,6 +267,7 @@ export interface PublishJob {
 export interface SiteI18nSettings {
   default_language: string;
   supported_languages: string[];
+  published_languages: string[];
 }
 
 export interface ProjectTranslation {
