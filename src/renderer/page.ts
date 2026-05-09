@@ -7,10 +7,14 @@ export async function renderPage(slug: string, env: Env): Promise<Response> {
 }
 
 export async function renderHomePage(env: Env): Promise<Response> {
-  // Look up the page flagged is_home = 1. If none, the caller should fall back.
-  const home = await env.DB.prepare(
-    'SELECT slug FROM pages WHERE is_home = 1 AND published = 1 LIMIT 1',
-  ).first<{ slug: string }>();
+  const hasHomeColumn = await hasIsHomeColumn(env);
+  const home = hasHomeColumn
+    ? await env.DB.prepare(
+      'SELECT slug FROM pages WHERE is_home = 1 AND published = 1 LIMIT 1',
+    ).first<{ slug: string }>()
+    : await env.DB.prepare(
+      'SELECT slug FROM pages WHERE slug = ? AND published = 1 LIMIT 1',
+    ).bind('home').first<{ slug: string }>();
   if (!home) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
   return renderPageBy('slug', home.slug, env);
 }
@@ -45,13 +49,14 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env): Prom
 
   // Home page suppresses the redundant H1 (the project_list widget speaks for itself);
   // other pages keep the title heading. This matches the previous look of '/'.
-  const showHeading = !page.is_home;
+  const isHome = page.is_home === 1 || page.slug === 'home';
+  const showHeading = !isHome;
   const body = `
     ${showHeading ? `<h1 class="page-title">${escHtml(page.title)}</h1>` : ''}
     <div${showHeading ? ' style="margin-top:1.5rem"' : ''}>${elementsHtml}</div>
   `;
 
-  const titleSuffix = page.is_home ? 'CodeEmpty' : `${page.title} — CodeEmpty`;
+  const titleSuffix = isHome ? 'CodeEmpty' : `${page.title} — CodeEmpty`;
   const html = renderLayout({ title: titleSuffix, body, scripts, navPages });
   await env.PAGES_KV.put(cacheKey, html, { expirationTtl: 86400 });
   await env.DB.prepare(
@@ -61,4 +66,9 @@ async function renderPageBy(field: 'slug' | 'id', value: string, env: Env): Prom
     .run();
 
   return new Response(html, { headers: { 'content-type': 'text/html;charset=utf-8' } });
+}
+
+async function hasIsHomeColumn(env: Env): Promise<boolean> {
+  const info = await env.DB.prepare('PRAGMA table_info(pages)').all<{ name: string }>();
+  return info.results.some((col) => col.name === 'is_home');
 }
