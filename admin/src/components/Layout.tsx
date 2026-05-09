@@ -17,7 +17,6 @@ const nav = [
   { to: '/forms', label: 'Forms', abbr: 'F' },
   { to: '/oauth', label: 'API Apps', abbr: 'A' },
   { to: '/destinations', label: 'Destinations', abbr: 'Dst' },
-  { to: '/contact-submissions', label: 'Form Data', abbr: 'FD' },
   { to: '/settings', label: 'Settings', abbr: '⚙' },
 ];
 

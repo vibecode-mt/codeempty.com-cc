@@ -7,32 +7,6 @@ export default function Settings() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [contact, setContact] = useState<ContactFormConfig | null>(null);
-  const [contactLoading, setContactLoading] = useState(true);
-  const [contactSaving, setContactSaving] = useState(false);
-  const [contactError, setContactError] = useState('');
-  const [contactSuccess, setContactSuccess] = useState('');
-
-  useEffect(() => {
-    api.getContactConfig()
-      .then((cfg) => {
-        setContact(cfg);
-      })
-      .catch((e) => setContactError(String(e)))
-      .finally(() => setContactLoading(false));
-  }, []);
-
-  const captchaInstructions = useMemo(() => {
-    if (!contact || !contact.captcha.enabled || contact.captcha.provider === 'none') return '';
-    if (contact.captcha.provider === 'turnstile') {
-      return 'Turnstile setup: create a widget in Cloudflare Dashboard → Turnstile, set allowed domain(s), then paste site key + secret key.';
-    }
-    if (contact.captcha.provider === 'recaptcha_v2') {
-      return 'reCAPTCHA v2 setup: create “I am not a robot” keys at Google reCAPTCHA admin, add your domain(s), then paste site key + secret key.';
-    }
-    return 'reCAPTCHA v3 setup: create score-based keys at Google reCAPTCHA admin, add your domain(s), then paste site key + secret key.';
-  }, [contact]);
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (form.new_password !== form.confirm) { setError('New passwords do not match'); return; }
@@ -51,7 +25,7 @@ export default function Settings() {
     }
   }
 
-  async function saveContactConfig() {
+  async function handleInvalidateCache() {
     if (!confirm('Invalidate all cached pages? They will be re-generated on next visit.')) return;
     try {
       await api.invalidateAll();
@@ -91,7 +65,7 @@ export default function Settings() {
       <div className="bg-white border rounded-xl p-6 space-y-3">
         <h2 className="font-semibold">Cache</h2>
         <p className="text-sm text-gray-500">Pages are cached for fast delivery. Invalidate when you need to force a refresh.</p>
-        <button onClick={saveContactConfig} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50">
+        <button onClick={handleInvalidateCache} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50">
           Invalidate all cached pages
         </button>
       </div>
