@@ -15,8 +15,7 @@ import Scripts from './pages/Scripts';
 import OAuthApps from './pages/OAuthApps';
 import Destinations from './pages/Destinations';
 import Settings from './pages/Settings';
-import ContactSetupGuide from './pages/ContactSetupGuide';
-import ContactSubmissions from './pages/ContactSubmissions';
+import FormSetupGuide from './pages/ContactSetupGuide';
 import Forms from './pages/Forms';
 import FormEdit from './pages/FormEdit';
 
@@ -62,9 +61,8 @@ export default function App() {
         <Route path="/forms" element={<Forms />} />
         <Route path="/forms/new" element={<FormEdit />} />
         <Route path="/forms/:id" element={<FormEdit />} />
+        <Route path="/forms/setup" element={<FormSetupGuide />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="/settings/contact-setup" element={<ContactSetupGuide />} />
-        <Route path="/contact-submissions" element={<ContactSubmissions />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

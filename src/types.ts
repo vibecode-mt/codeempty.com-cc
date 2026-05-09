@@ -99,7 +99,7 @@ export type ContentElementType =
 export type RenderStyle = 'default' | 'ai_response' | 'thoughts' | 'markdown';
 export type ParentType = 'project_step' | 'page' | 'blog_entry';
 
-export type WidgetKind = 'project_list' | 'blog_list' | 'contact' | 'form' | 'form_data';
+export type WidgetKind = 'project_list' | 'blog_list' | 'form' | 'form_data';
 export interface WidgetContent {
   kind: WidgetKind;
 }

@@ -18,29 +18,7 @@ function formatTimestamp(ms: number) {
 interface CaptionImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (
-    captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element'; tags?: string }>,
-  ) => Promise<void>;
-}
-
-// Default per-track tag derived from the parser's groupId.
-//   "track-0" → "track1", "track-1" → "track2", "subtitles" → "subtitles"
-function defaultTagForGroup(groupId: string): string {
-  const m = groupId.match(/^track-(\d+)$/);
-  if (m) return `track${parseInt(m[1], 10) + 1}`;
-  return groupId;
-}
-
-function mergeTags(...parts: Array<string | undefined>): string {
-  const set = new Set<string>();
-  for (const part of parts) {
-    if (!part) continue;
-    for (const t of part.split(',')) {
-      const trimmed = t.trim().toLowerCase();
-      if (trimmed) set.add(trimmed);
-    }
-  }
-  return Array.from(set).join(',');
+  onImport: (captions: Array<{ text: string; timestampMs: number; type: 'step' | 'element' }>) => Promise<void>;
 }
 
 export default function CaptionImportModal({ isOpen, onClose, onImport }: CaptionImportModalProps) {
@@ -50,9 +28,6 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
   const [parsed, setParsed] = useState<CaptionWithType[]>([]);
   const [fileName, setFileName] = useState('');
   const [importing, setImporting] = useState(false);
-  const [globalTags, setGlobalTags] = useState('youtube');
-  // Per-group tag override — keyed by groupId, default seeded from defaultTagForGroup().
-  const [groupTags, setGroupTags] = useState<Record<string, string>>({});
 
   const handleFileSelect = async (file: File) => {
     setError('');
@@ -68,15 +43,10 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
         throw new Error('No captions found in file');
       }
 
-      // Sort by timestamp before assigning step/element types so that captions from
-      // multiple CapCut text tracks merge into a single chronological sequence.
-      // The modal still displays them grouped by source track via groupId.
+      // Sort by timestamp before assigning step/element types
       const captions = [...rawCaptions].sort((a, b) => a.timestampMs - b.timestampMs);
 
-      // Auto-detect steps: captions starting with "<num>[letter].", e.g. "23.", "24a.".
-      // Track the highest step number so a sub-sequence like 22, 1, 2, 3, 23 treats
-      // the 1/2/3 as bullets (elements) and resumes step numbering at 23.
-      // Equal number with a letter suffix (24 → 24a → 24b) still counts as a step.
+      // Auto-detect steps: first is always a step, then numbered items (e.g. "1.", "2.", "2a.")
       const stepRegex = /^\s*(\d+)([a-z]?)\./;
       let highestStepNum = -1;
 
@@ -85,12 +55,13 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
         let type: 'step' | 'element' = 'element';
 
         if (idx === 0) {
-          // First caption defaults to a step so a no-numbered file still imports cleanly
+          // First caption is always a step (required by backend)
           type = 'step';
           if (match) highestStepNum = parseInt(match[1], 10);
         } else if (match) {
           const num = parseInt(match[1], 10);
           const letter = match[2];
+          // Treat as step if number increases or number equals highest with new letter
           if (num > highestStepNum || (num === highestStepNum && letter !== '')) {
             type = 'step';
             highestStepNum = num;
@@ -106,13 +77,6 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
       });
 
       setParsed(captionTypes);
-
-      // Seed per-group tag defaults from groupIds in the parsed set.
-      const seed: Record<string, string> = {};
-      for (const cap of captionTypes) {
-        if (!(cap.groupId in seed)) seed[cap.groupId] = defaultTagForGroup(cap.groupId);
-      }
-      setGroupTags(seed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse file');
       setParsed([]);
@@ -124,7 +88,9 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
   const handleToggleType = (index: number) => {
     setParsed((prev) =>
       prev.map((cap) =>
-        cap.index === index ? { ...cap, type: cap.type === 'step' ? 'element' : 'step' } : cap,
+        cap.index === index && index !== 0
+          ? { ...cap, type: cap.type === 'step' ? 'element' : 'step' }
+          : cap,
       ),
     );
   };
@@ -134,27 +100,6 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
       prev.map((cap) => (cap.index === index ? { ...cap, selected: !cap.selected } : cap)),
     );
   };
-
-  const handleSetGroupSelection = (groupId: string, selected: boolean) => {
-    setParsed((prev) =>
-      prev.map((cap) => (cap.groupId === groupId ? { ...cap, selected } : cap)),
-    );
-  };
-
-  // Group the parsed captions for rendering. Order preserves the parser's emission
-  // order (per-track for CapCut, single bucket for SRT/VTT).
-  const groups = useMemo(() => {
-    const order: string[] = [];
-    const map = new Map<string, { groupId: string; groupLabel: string; items: CaptionWithType[] }>();
-    for (const cap of parsed) {
-      if (!map.has(cap.groupId)) {
-        order.push(cap.groupId);
-        map.set(cap.groupId, { groupId: cap.groupId, groupLabel: cap.groupLabel, items: [] });
-      }
-      map.get(cap.groupId)!.items.push(cap);
-    }
-    return order.map((id) => map.get(id)!);
-  }, [parsed]);
 
   const selectedItems = parsed.filter((c) => c.selected);
   const selectedSteps = selectedItems.filter((c) => c.type === 'step').length;
@@ -173,20 +118,9 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
 
     setImporting(true);
     try {
-      await onImport(
-        selectedItems.map((c) => {
-          const merged = mergeTags(globalTags, groupTags[c.groupId]);
-          return {
-            text: c.text,
-            timestampMs: c.timestampMs,
-            type: c.type,
-            tags: merged || undefined,
-          };
-        }),
-      );
+      await onImport(selectedItems.map((c) => ({ text: c.text, timestampMs: c.timestampMs, type: c.type })));
       setParsed([]);
       setFileName('');
-      setGroupTags({});
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
@@ -246,100 +180,48 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
           ) : (
             // Preview section
             <div>
-              <p className="mb-3 text-sm text-gray-600">
-                Toggle each caption between <strong>Step</strong> (section header) and <strong>Element</strong>{' '}
-                (content). Uncheck items to skip them. First selected caption must be a step.
+              <p className="mb-4 text-sm text-gray-600">
+                Mark each caption as <strong>Step</strong> (topic/section header) or <strong>Element</strong> (content
+                details). ✓ = include in import.
               </p>
 
-              <div className="mb-4 flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 shrink-0">Global tags:</label>
-                <input
-                  className="flex-1 border rounded px-2 py-1 text-sm font-mono"
-                  placeholder="comma-separated, applied to every imported item — e.g. youtube,intro"
-                  value={globalTags}
-                  onChange={(e) => setGlobalTags(e.target.value)}
-                />
-              </div>
-              <p className="mb-3 text-xs text-gray-500">
-                Each track also gets its own tag (defaulted to <code className="font-mono">track1</code>,{' '}
-                <code className="font-mono">track2</code>, …). Edit on the track header. Final tags = global + per-track.
-              </p>
-
-              <div className="space-y-5 max-h-[28rem] overflow-y-auto">
-                {groups.map((g) => {
-                  const groupSelectedCount = g.items.filter((c) => c.selected).length;
-                  const allSelected = groupSelectedCount === g.items.length;
-                  const noneSelected = groupSelectedCount === 0;
-                  return (
-                    <div key={g.groupId} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="flex items-center gap-3 px-3 py-2 bg-gray-100 border-b border-gray-200 flex-wrap">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          ref={(el) => {
-                            if (el) el.indeterminate = !allSelected && !noneSelected;
-                          }}
-                          onChange={(e) => handleSetGroupSelection(g.groupId, e.currentTarget.checked)}
-                          className="w-4 h-4 cursor-pointer"
-                          title={allSelected ? 'Deselect all in group' : 'Select all in group'}
-                        />
-                        <span className="text-sm font-semibold text-gray-700 flex-1 truncate min-w-0">{g.groupLabel}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-xs text-gray-500">tag:</span>
-                          <input
-                            value={groupTags[g.groupId] ?? ''}
-                            onChange={(e) =>
-                              setGroupTags((prev) => ({ ...prev, [g.groupId]: e.target.value }))
-                            }
-                            className="border rounded px-1.5 py-0.5 text-xs font-mono w-28"
-                            placeholder="track1"
-                            title="Tag automatically applied to every item from this track. Comma-separate for multiple."
-                          />
-                        </div>
-                        <span className="text-xs text-gray-500 shrink-0">
-                          {groupSelectedCount} / {g.items.length}
-                        </span>
-                      </div>
-                      <div className="space-y-2 p-2">
-                        {g.items.map((cap) => (
-                          <div
-                            key={cap.index}
-                            className={`p-2 border rounded flex items-start gap-3 ${
-                              !cap.selected
-                                ? 'border-gray-200 bg-white opacity-50'
-                                : cap.type === 'step'
-                                ? 'border-blue-300 bg-blue-50'
-                                : 'border-gray-200 bg-gray-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={cap.selected}
-                              onChange={() => handleToggleSelect(cap.index)}
-                              className="w-4 h-4 mt-1 cursor-pointer shrink-0"
-                              title={cap.selected ? 'Skip this caption' : 'Include this caption'}
-                            />
-                            <button
-                              onClick={() => handleToggleType(cap.index)}
-                              disabled={!cap.selected}
-                              className={`px-3 py-1 rounded font-medium text-sm whitespace-nowrap flex-shrink-0 transition ${
-                                cap.type === 'step'
-                                  ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                  : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                              } disabled:cursor-not-allowed`}
-                            >
-                              {cap.type === 'step' ? '📌 Step' : '📝 Element'}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 break-words">{cap.text}</p>
-                              <p className="text-xs text-gray-500 mt-1">{formatTimestamp(cap.timestampMs)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+              <div className="space-y-3 max-h-[28rem] overflow-y-auto">
+                {parsed.map((cap) => (
+                  <div
+                    key={cap.index}
+                    className={`p-3 border rounded flex items-start gap-3 ${
+                      !cap.selected
+                        ? 'border-gray-200 bg-white opacity-50'
+                        : cap.type === 'step'
+                        ? 'border-blue-300 bg-blue-50'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={cap.selected}
+                      onChange={() => handleToggleSelect(cap.index)}
+                      className="w-4 h-4 mt-1 cursor-pointer shrink-0"
+                      title={cap.selected ? 'Skip this caption' : 'Include this caption'}
+                    />
+                    <button
+                      onClick={() => handleToggleType(cap.index)}
+                      disabled={cap.index === 0}
+                      title={cap.index === 0 ? 'First caption must be a step' : 'Click to toggle'}
+                      className={`px-3 py-1 rounded font-medium text-sm whitespace-nowrap flex-shrink-0 transition ${
+                        cap.type === 'step'
+                          ? 'bg-blue-500 text-white hover:bg-blue-600'
+                          : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                      } ${cap.index === 0 ? 'opacity-75 cursor-not-allowed' : ''}`}
+                    >
+                      {cap.type === 'step' ? '📌 Step' : '📝 Element'}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 break-words">{cap.text}</p>
+                      <p className="text-xs text-gray-500 mt-1">{formatTimestamp(cap.timestampMs)}</p>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
 
               {error && (
@@ -353,7 +235,7 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
         <div className="flex items-center justify-between p-6 border-t bg-gray-50">
           <div className="text-sm text-gray-600">
             {parsed.length > 0
-              ? `${selectedSteps} steps, ${selectedElements} elements (${selectedItems.length} of ${parsed.length})`
+              ? `Ready: ${selectedSteps} steps, ${selectedElements} elements (${selectedItems.length} total selected)`
               : ''}
           </div>
           <div className="flex gap-3">

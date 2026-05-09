@@ -34,7 +34,10 @@
       "Bash(curl -s http://localhost:8788/api/health)",
       "Bash(npx vite *)",
       "Bash(git check-ignore *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(grep -E \"\\\\.\\(sql|ts\\)$\")",
+      "Bash(curl *)",
+      "Bash(node *)"
     ]
   }
 }

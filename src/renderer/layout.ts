@@ -226,19 +226,5 @@ img{max-width:100%;height:auto;display:block}
 .blog-date-label{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin-bottom:.75rem}
 .blog-entry-link{display:block;padding:.75rem 0;border-bottom:1px solid #f3f4f6;font-weight:500}
 .blog-entry-content{margin-top:1.5rem}
-.contact-form{display:flex;flex-direction:column;gap:.85rem;max-width:720px}
-.contact-field{display:flex;flex-direction:column;gap:.35rem}
-.contact-field>span{font-size:.9rem;font-weight:600;color:#374151}
-.contact-field input,.contact-field textarea,.contact-field select{width:100%;border:1px solid #d1d5db;border-radius:.5rem;padding:.6rem .7rem;font:inherit}
-.contact-field textarea{min-height:140px;resize:vertical}
-.contact-field-checkbox{flex-direction:row;align-items:center;gap:.5rem}
-.contact-field-checkbox input{width:auto}
-.contact-help{font-size:.8rem;color:#6b7280}
-.contact-form button[type="submit"]{align-self:flex-start;padding:.6rem 1rem;background:#2563eb;color:#fff;border:0;border-radius:.5rem;cursor:pointer;font:inherit;font-weight:600}
-.contact-form button[type="submit"]:hover{background:#1d4ed8}
-.contact-captcha-note{font-size:.85rem;color:#6b7280}
-.contact-status{margin-top:.25rem;font-size:.9rem}
-.contact-status.ok{color:#166534}
-.contact-status.error{color:#b91c1c}
 .back-link{display:inline-flex;align-items:center;gap:.4rem;color:#6b7280;font-size:.9rem;margin-bottom:1.5rem}
 `;
