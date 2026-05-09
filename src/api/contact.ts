@@ -12,10 +12,15 @@ contactRoutes.get('/config', requireAdmin, async (c) => {
 });
 
 contactRoutes.put('/config', requireAdmin, async (c) => {
-  const body = await c.req.json<ContactFormConfig>();
-  const saved = await upsertContactConfig(c.env, body);
-  await invalidateContactWidgetCaches(c.env);
-  return c.json(saved);
+  try {
+    const body = await c.req.json<ContactFormConfig>();
+    const saved = await upsertContactConfig(c.env, body);
+    await invalidateContactWidgetCaches(c.env);
+    return c.json(saved);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Invalid contact config';
+    return c.json({ error: message }, 400);
+  }
 });
 
 contactRoutes.get('/submissions', requireAdmin, async (c) => {

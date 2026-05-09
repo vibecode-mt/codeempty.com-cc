@@ -205,14 +205,6 @@ export function validateContactConfig(input: ContactFormConfig): ContactFormConf
     smtp_secure: input.delivery?.smtp_secure ? 1 : 0,
   };
 
-  if (!delivery.to_email) throw new Error('Delivery "to" email is required');
-  if (delivery.provider === 'webhook' && !delivery.webhook_url) {
-    throw new Error('Webhook URL is required when delivery provider is webhook');
-  }
-  if (delivery.provider === 'smtp' && !delivery.smtp_host) {
-    throw new Error('SMTP host is required when delivery provider is smtp');
-  }
-
   return {
     fields: cleanFields,
     captcha,
