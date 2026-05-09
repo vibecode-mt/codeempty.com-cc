@@ -81,6 +81,13 @@ contactRoutes.post('/submit', async (c) => {
     .bind(submissionId, body.source_page_slug ?? null, JSON.stringify(payload), 'received', null)
     .run();
 
+  if (!hasDeliveryTarget(cfg)) {
+    await c.env.DB.prepare('UPDATE contact_submissions SET status = ? WHERE id = ?')
+      .bind('stored', submissionId)
+      .run();
+    return c.json({ ok: true, message: cfg.success_message });
+  }
+
   const delivered = await deliverSubmission(cfg, payload);
   if (!delivered.ok) {
     await c.env.DB.prepare('UPDATE contact_submissions SET status = ?, error_message = ? WHERE id = ?')
@@ -160,6 +167,16 @@ async function deliverSubmission(
   });
   if (!resp.ok) return { ok: false, error: `Delivery endpoint returned ${resp.status}` };
   return { ok: true };
+}
+
+function hasDeliveryTarget(cfg: ContactFormConfig): boolean {
+  if (cfg.delivery.provider === 'webhook') {
+    return Boolean(cfg.delivery.webhook_url?.trim());
+  }
+  if (cfg.delivery.provider === 'smtp') {
+    return Boolean(cfg.delivery.smtp_host?.trim());
+  }
+  return false;
 }
 
 async function invalidateContactWidgetCaches(env: Env) {
