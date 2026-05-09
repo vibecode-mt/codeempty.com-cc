@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, SiteI18nSettings } from '../types';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
 import {
+  ensureI18nSchema,
   getSiteI18nSettings,
   normalizeLanguageCode,
   parseSupportedLanguages,
@@ -29,6 +30,7 @@ i18nRoutes.put('/settings', requireAdmin, async (c) => {
 });
 
 i18nRoutes.get('/translations/export', requireOAuthOrSession, async (c) => {
+  await ensureI18nSchema(c.env);
   const settings = await getSiteI18nSettings(c.env);
   const language = normalizeLanguageCode(c.req.query('language'));
   if (!language) return c.json({ error: 'language query param is required' }, 400);
@@ -134,6 +136,7 @@ i18nRoutes.get('/translations/export', requireOAuthOrSession, async (c) => {
 });
 
 i18nRoutes.post('/translations/import', requireAdmin, async (c) => {
+  await ensureI18nSchema(c.env);
   const body = await c.req.json<{
     language?: string;
     projects?: Array<{ id: string; title?: string | null; description?: string | null; seo_title?: string | null; seo_description?: string | null }>;
@@ -228,6 +231,76 @@ i18nRoutes.post('/translations/import', requireAdmin, async (c) => {
 
   return c.json({ ok: true, language, upserts: stmts.length });
 });
+
+i18nRoutes.get('/translations/:entity/:id', requireOAuthOrSession, async (c) => {
+  await ensureI18nSchema(c.env);
+  const language = normalizeLanguageCode(c.req.query('language'));
+  if (!language) return c.json({ error: 'language query param is required' }, 400);
+  const cfg = getEntityConfig(c.req.param('entity'));
+  if (!cfg) return c.json({ error: 'Unsupported entity type' }, 400);
+  const row = await c.env.DB.prepare(
+    `SELECT * FROM ${cfg.table} WHERE ${cfg.idColumn} = ? AND language = ?`,
+  ).bind(c.req.param('id'), language).first<Record<string, unknown>>();
+  return c.json(row ?? {});
+});
+
+i18nRoutes.put('/translations/:entity/:id', requireAdmin, async (c) => {
+  await ensureI18nSchema(c.env);
+  const cfg = getEntityConfig(c.req.param('entity'));
+  if (!cfg) return c.json({ error: 'Unsupported entity type' }, 400);
+  const body = await c.req.json<Record<string, unknown>>();
+  const language = normalizeLanguageCode(body.language);
+  if (!language) return c.json({ error: 'language is required' }, 400);
+  const settings = await getSiteI18nSettings(c.env);
+  if (!settings.supported_languages.includes(language)) {
+    return c.json({ error: `language "${language}" is not enabled` }, 400);
+  }
+  if (language === settings.default_language) {
+    return c.json({ error: 'Cannot store translations for default language' }, 400);
+  }
+
+  const fieldValues = cfg.fields.map((field) => normalizeField(body[field]));
+  const placeholders = cfg.fields.map(() => '?').join(', ');
+  const updateFields = cfg.fields.map((field) => `${field} = excluded.${field}`).join(', ');
+  await c.env.DB.prepare(
+    `INSERT INTO ${cfg.table} (${cfg.idColumn}, language, ${cfg.fields.join(', ')}, updated_at)
+     VALUES (?, ?, ${placeholders}, datetime('now'))
+     ON CONFLICT(${cfg.idColumn}, language) DO UPDATE SET
+       ${updateFields},
+       updated_at = excluded.updated_at`,
+  ).bind(c.req.param('id'), language, ...fieldValues).run();
+
+  await invalidateAllCaches(c.env);
+  const updated = await c.env.DB.prepare(
+    `SELECT * FROM ${cfg.table} WHERE ${cfg.idColumn} = ? AND language = ?`,
+  ).bind(c.req.param('id'), language).first<Record<string, unknown>>();
+  return c.json(updated ?? {});
+});
+
+type EntityConfig = {
+  table: string;
+  idColumn: string;
+  fields: string[];
+};
+
+function getEntityConfig(entity: string): EntityConfig | null {
+  if (entity === 'project') {
+    return { table: 'project_translations', idColumn: 'project_id', fields: ['title', 'description', 'seo_title', 'seo_description'] };
+  }
+  if (entity === 'page') {
+    return { table: 'page_translations', idColumn: 'page_id', fields: ['title', 'seo_title', 'seo_description'] };
+  }
+  if (entity === 'blog_entry') {
+    return { table: 'blog_entry_translations', idColumn: 'blog_entry_id', fields: ['title', 'seo_title', 'seo_description'] };
+  }
+  if (entity === 'project_step') {
+    return { table: 'project_step_translations', idColumn: 'step_id', fields: ['title'] };
+  }
+  if (entity === 'content_element') {
+    return { table: 'content_element_translations', idColumn: 'content_element_id', fields: ['content'] };
+  }
+  return null;
+}
 
 function normalizeField(value: unknown): string | null {
   if (value == null) return null;

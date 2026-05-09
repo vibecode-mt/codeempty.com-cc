@@ -1,12 +1,43 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 
+const LANGUAGE_OPTIONS: Array<{ code: string; name: string }> = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'no', name: 'Norwegian' },
+  { code: 'da', name: 'Danish' },
+  { code: 'fi', name: 'Finnish' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'cs', name: 'Czech' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'uk', name: 'Ukrainian' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'he', name: 'Hebrew' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'th', name: 'Thai' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'id', name: 'Indonesian' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'cn', name: 'Chinese (Simplified)' },
+];
+
 export default function Settings() {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [langForm, setLangForm] = useState({ default_language: 'en', supported_languages: 'en' });
+  const [langForm, setLangForm] = useState<{ default_language: string; supported_languages: string[] }>({
+    default_language: 'en',
+    supported_languages: ['en'],
+  });
   const [langLoading, setLangLoading] = useState(false);
   const [langError, setLangError] = useState('');
   const [langSuccess, setLangSuccess] = useState('');
@@ -16,7 +47,7 @@ export default function Settings() {
       .then((settings) => {
         setLangForm({
           default_language: settings.default_language,
-          supported_languages: settings.supported_languages.join(', '),
+          supported_languages: settings.supported_languages,
         });
       })
       .catch((e) => setLangError(String(e)));
@@ -56,17 +87,14 @@ export default function Settings() {
     setLangError('');
     setLangSuccess('');
     try {
-      const supported = langForm.supported_languages
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const supported = Array.from(new Set(langForm.supported_languages));
       const updated = await api.updateI18nSettings({
         default_language: langForm.default_language.trim().toLowerCase(),
         supported_languages: supported,
       });
       setLangForm({
         default_language: updated.default_language,
-        supported_languages: updated.supported_languages.join(', '),
+        supported_languages: updated.supported_languages,
       });
       setLangSuccess('Languages updated successfully.');
     } catch (e) {
@@ -114,26 +142,56 @@ export default function Settings() {
       <div className="bg-white border rounded-xl p-6 space-y-4">
         <h2 className="font-semibold">Languages</h2>
         <p className="text-sm text-gray-500">
-          Configure which languages the site supports. English content remains the default source and translations can be imported through the i18n APIs.
+          Choose the website languages here. English is the base source language. For each page/project/blog item and content block, you can then enter translated text directly in the editors by selecting a translation language.
         </p>
+        <div className="text-xs text-gray-500 bg-gray-50 border rounded-lg p-3 leading-relaxed">
+          Translation workflow: 1) create content in English, 2) choose supported languages here, 3) open an editor (project/page/blog) and select a translation language, 4) fill translated fields, 5) publish. External AI tools can also use the i18n export/import APIs.
+        </div>
         <form onSubmit={handleSaveLanguages} className="space-y-3">
           <div>
             <label className="block text-sm font-medium mb-1">Default language code</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm"
               value={langForm.default_language}
               onChange={(e) => setLangForm((f) => ({ ...f, default_language: e.target.value }))}
-              placeholder="en"
-            />
+            >
+              {langForm.supported_languages.map((code) => {
+                const item = LANGUAGE_OPTIONS.find((l) => l.code === code);
+                return (
+                  <option key={code} value={code}>
+                    {item ? `${item.name} (${code})` : code}
+                  </option>
+                );
+              })}
+            </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Supported languages (comma-separated)</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm font-mono"
-              value={langForm.supported_languages}
-              onChange={(e) => setLangForm((f) => ({ ...f, supported_languages: e.target.value }))}
-              placeholder="en, es, fr"
-            />
+            <label className="block text-sm font-medium mb-2">Supported languages</label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {LANGUAGE_OPTIONS.map((lang) => {
+                const checked = langForm.supported_languages.includes(lang.code);
+                return (
+                  <label key={lang.code} className="flex items-center gap-2 text-sm border rounded-lg px-3 py-2 hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setLangForm((f) => {
+                          const next = new Set(f.supported_languages);
+                          if (e.target.checked) next.add(lang.code);
+                          else next.delete(lang.code);
+                          if (!next.has('en')) next.add('en');
+                          const supported = Array.from(next);
+                          const defaultLanguage = next.has(f.default_language) ? f.default_language : 'en';
+                          return { ...f, supported_languages: supported, default_language: defaultLanguage };
+                        });
+                      }}
+                    />
+                    <span>{lang.name}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
           {langError && <p className="text-red-500 text-sm">{langError}</p>}
           {langSuccess && <p className="text-green-600 text-sm">{langSuccess}</p>}

@@ -212,6 +212,10 @@ export const api = {
   updateI18nSettings: (b: SiteI18nSettings) => req<SiteI18nSettings>('PUT', '/i18n/settings', b),
   exportTranslations: (language: string) => req<TranslationExport>('GET', `/i18n/translations/export?language=${encodeURIComponent(language)}`),
   importTranslations: (b: TranslationImport) => req<{ ok: boolean; language: string; upserts: number }>('POST', '/i18n/translations/import', b),
+  getEntityTranslation: (entity: EntityTranslationTarget, id: string, language: string) =>
+    req<Record<string, unknown>>('GET', `/i18n/translations/${entity}/${id}?language=${encodeURIComponent(language)}`),
+  updateEntityTranslation: (entity: EntityTranslationTarget, id: string, body: { language: string } & Record<string, unknown>) =>
+    req<Record<string, unknown>>('PUT', `/i18n/translations/${entity}/${id}`, body),
 
   // Generic forms
   listForms: () => req<FormDefinition[]>('GET', '/forms'),
@@ -423,3 +427,5 @@ export interface TranslationImport {
   project_steps?: Array<{ id: string; title?: string | null }>;
   content_elements?: Array<{ id: string; content?: string | null }>;
 }
+
+export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element';

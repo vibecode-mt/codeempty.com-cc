@@ -96,6 +96,12 @@ export default function ProjectEdit() {
   const [showPublish, setShowPublish] = useState(false);
   const [exporting, setExporting] = useState<BundleProgress | null>(null);
   const [exportError, setExportError] = useState('');
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
+  const [defaultLanguage, setDefaultLanguage] = useState('en');
+  const [translationLanguage, setTranslationLanguage] = useState('');
+  const [translation, setTranslation] = useState({ title: '', description: '', seo_title: '', seo_description: '' });
+  const [translationStepTitles, setTranslationStepTitles] = useState<Record<string, string>>({});
+  const [translationSaving, setTranslationSaving] = useState(false);
   // Tag-manage mode: when manageTag is set, each row shows a one-click toggle.
   // manageTagInput is the draft in the toolbar input; activation happens on the
   // Start button or Enter so the user can finish typing before the banner kicks in.
@@ -132,6 +138,46 @@ export default function ProjectEdit() {
       }
     });
   }, [steps]);
+
+  useEffect(() => {
+    api.getI18nSettings().then((settings) => {
+      setSupportedLanguages(settings.supported_languages);
+      setDefaultLanguage(settings.default_language);
+      const first = settings.supported_languages.find((l) => l !== settings.default_language) ?? '';
+      setTranslationLanguage(first);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!projectId || !translationLanguage) return;
+    api.getEntityTranslation('project', projectId, translationLanguage)
+      .then((row) => {
+        setTranslation({
+          title: typeof row.title === 'string' ? row.title : '',
+          description: typeof row.description === 'string' ? row.description : '',
+          seo_title: typeof row.seo_title === 'string' ? row.seo_title : '',
+          seo_description: typeof row.seo_description === 'string' ? row.seo_description : '',
+        });
+      })
+      .catch(() => setTranslation({ title: '', description: '', seo_title: '', seo_description: '' }));
+  }, [projectId, translationLanguage]);
+
+  useEffect(() => {
+    if (!translationLanguage || steps.length === 0) {
+      setTranslationStepTitles({});
+      return;
+    }
+    Promise.all(
+      steps.map(async (step) => {
+        try {
+          const row = await api.getEntityTranslation('project_step', step.id, translationLanguage);
+          return [step.id, typeof row.title === 'string' ? row.title : ''] as const;
+        } catch {
+          return [step.id, ''] as const;
+        }
+      }),
+    ).then((entries) => setTranslationStepTitles(Object.fromEntries(entries)));
+  }, [steps, translationLanguage]);
 
   function toggleStep(stepId: string) {
     setExpandedStepIds((prev) => {
@@ -238,6 +284,31 @@ export default function ProjectEdit() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSaveTranslation() {
+    const pid = projectId ?? id;
+    if (!pid || !translationLanguage) return;
+    setTranslationSaving(true);
+    try {
+      await api.updateEntityTranslation('project', pid, {
+        language: translationLanguage,
+        title: translation.title,
+        description: translation.description,
+        seo_title: translation.seo_title,
+        seo_description: translation.seo_description,
+      });
+    } finally {
+      setTranslationSaving(false);
+    }
+  }
+
+  async function handleSaveStepTranslation(stepId: string) {
+    if (!translationLanguage) return;
+    await api.updateEntityTranslation('project_step', stepId, {
+      language: translationLanguage,
+      title: translationStepTitles[stepId] ?? '',
+    });
   }
 
   async function onVideoUploaded({ key, url }: { key: string; url: string }) {
@@ -596,7 +667,29 @@ export default function ProjectEdit() {
             </div>
 
             {isExpanded && (
-              <div className="p-4">
+              <div className="p-4 space-y-3">
+                {translationLanguage && (
+                  <div className="border rounded-lg p-3 bg-indigo-50/40">
+                    <label className="block text-xs font-medium text-indigo-800 mb-1">
+                      Translated step title ({translationLanguage})
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 border rounded px-3 py-1.5 text-sm"
+                        value={translationStepTitles[step.id] ?? ''}
+                        onChange={(e) => setTranslationStepTitles((prev) => ({ ...prev, [step.id]: e.target.value }))}
+                        placeholder="Translated step title"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveStepTranslation(step.id)}
+                        className="px-3 py-1 text-xs border rounded hover:bg-white"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <ContentElementEditor
                   parentType="project_step"
                   parentId={step.id}
@@ -605,6 +698,7 @@ export default function ProjectEdit() {
                   onSeek={seekToMs}
                   onCaptureFrame={videoKey ? () => videoCaptureRef.current?.() ?? Promise.resolve(null) : undefined}
                   manageTag={manageTag || undefined}
+                  translationLanguage={translationLanguage || undefined}
                 />
               </div>
             )}
@@ -819,6 +913,50 @@ export default function ProjectEdit() {
     </div>
   );
 
+  const translationCard = (projectId ?? id) && supportedLanguages.some((l) => l !== defaultLanguage) ? (
+    <div className="bg-white border rounded-xl p-5 space-y-4 max-w-3xl">
+      <h2 className="text-base font-semibold">Translations</h2>
+      <div>
+        <label className="block text-sm font-medium mb-1">Translation language</label>
+        <select
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          value={translationLanguage}
+          onChange={(e) => setTranslationLanguage(e.target.value)}
+        >
+          <option value="">Select language</option>
+          {supportedLanguages.filter((l) => l !== defaultLanguage).map((lang) => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
+        </select>
+      </div>
+      {translationLanguage && (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Translated title</label>
+              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.title} onChange={(e) => setTranslation((t) => ({ ...t, title: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Translated SEO title</label>
+              <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_title} onChange={(e) => setTranslation((t) => ({ ...t, seo_title: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Translated overview/description</label>
+            <textarea className="w-full border rounded-lg px-3 py-2 text-sm resize-y" rows={4} value={translation.description} onChange={(e) => setTranslation((t) => ({ ...t, description: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Translated SEO description</label>
+            <input className="w-full border rounded-lg px-3 py-2 text-sm" value={translation.seo_description} onChange={(e) => setTranslation((t) => ({ ...t, seo_description: e.target.value }))} />
+          </div>
+          <button onClick={handleSaveTranslation} disabled={translationSaving} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60">
+            {translationSaving ? 'Saving translation…' : 'Save Translation Fields'}
+          </button>
+        </>
+      )}
+    </div>
+  ) : null;
+
   // ── Page layout ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
@@ -829,6 +967,7 @@ export default function ProjectEdit() {
 
       <div className="space-y-5">
         <div className="max-w-3xl">{metadataCard}</div>
+        {translationCard}
         {videoSection}
         {pid && stepsSection}
       </div>

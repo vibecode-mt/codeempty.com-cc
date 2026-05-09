@@ -102,11 +102,12 @@ interface Props {
   onSeek?: (timestampMs: number) => void;
   onCaptureFrame?: () => Promise<{ url: string; timestampMs: number } | null>;
   manageTag?: string;
+  translationLanguage?: string;
 }
 
 const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment', 'widget'];
 
-export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame, manageTag }: Props) {
+export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame, manageTag, translationLanguage }: Props) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('description');
   const [newContent, setNewContent] = useState('');
@@ -330,6 +331,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
             onAddUpload={(f) => handleAddUpload(el, f)}
             manageTag={manageTag}
             onToggleManageTag={() => handleToggleManageTag(el)}
+            translationLanguage={translationLanguage}
           />
         </div>
       ))}
@@ -496,7 +498,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   );
 }
 
-function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle, onToggleHidden, onSeek, onAddFrame, onAddUpload, manageTag, onToggleManageTag }: {
+function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle, onToggleHidden, onSeek, onAddFrame, onAddUpload, manageTag, onToggleManageTag, translationLanguage }: {
   el: ContentElement;
   onDelete: () => void;
   onUpdate: (c: string) => void;
@@ -508,6 +510,7 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
   onAddUpload: (file: File) => Promise<void>;
   manageTag?: string;
   onToggleManageTag: () => Promise<void>;
+  translationLanguage?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.content);
@@ -518,6 +521,10 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
     try { return (JSON.parse(el.content) as { label?: string }).label ?? ''; } catch { return ''; }
   });
   const [comment, setComment] = useState(() => parseUserComment(el.content));
+  const [translatedDraft, setTranslatedDraft] = useState('');
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationSaving, setTranslationSaving] = useState(false);
+  const supportsTranslation = el.type === 'title' || el.type === 'description' || el.type === 'prompt_code';
 
   // Re-sync derived state when the element's content/type changes from outside
   // (e.g., after a +frame conversion description → image). Without this, the
@@ -535,6 +542,15 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
     setComment(parseUserComment(el.content));
   }, [el.id, el.type, el.content]);
 
+  useEffect(() => {
+    if (!editing || !translationLanguage || !supportsTranslation) return;
+    setTranslationLoading(true);
+    api.getEntityTranslation('content_element', el.id, translationLanguage)
+      .then((row) => setTranslatedDraft(typeof row.content === 'string' ? row.content : ''))
+      .catch(() => setTranslatedDraft(''))
+      .finally(() => setTranslationLoading(false));
+  }, [editing, translationLanguage, supportsTranslation, el.id]);
+
   async function save() {
     let content = draft;
     if (el.type === 'url') content = JSON.stringify({ href: urlHref, label: urlLabel || urlHref });
@@ -547,6 +563,19 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
     }
     await onUpdate(content);
     setEditing(false);
+  }
+
+  async function saveTranslation() {
+    if (!translationLanguage || !supportsTranslation) return;
+    setTranslationSaving(true);
+    try {
+      await api.updateEntityTranslation('content_element', el.id, {
+        language: translationLanguage,
+        content: translatedDraft,
+      });
+    } finally {
+      setTranslationSaving(false);
+    }
   }
 
   const preview =
@@ -677,6 +706,34 @@ function ElementRow({ el, onDelete, onUpdate, onUpdateTags, onUpdateRenderStyle,
                 ))}
               </select>
               <span className="text-gray-400">{RENDER_STYLE_OPTIONS.find((o) => o.value === (el.render_style ?? 'default'))?.help}</span>
+            </div>
+          )}
+          {translationLanguage && supportsTranslation && (
+            <div className="space-y-2 border-t pt-3 mt-3">
+              <div className="text-xs font-medium text-indigo-700">
+                Translation ({translationLanguage})
+              </div>
+              {translationLoading ? (
+                <p className="text-xs text-gray-500">Loading translation…</p>
+              ) : (
+                <>
+                  <textarea
+                    className="w-full border rounded px-3 py-1.5 text-sm resize-y"
+                    rows={4}
+                    value={translatedDraft}
+                    onChange={(e) => setTranslatedDraft(e.target.value)}
+                    placeholder="Enter translated text for this element"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveTranslation}
+                    disabled={translationSaving}
+                    className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {translationSaving ? 'Saving…' : 'Save Translation'}
+                  </button>
+                </>
+              )}
             </div>
           )}
           {el.type === 'description' ? (
