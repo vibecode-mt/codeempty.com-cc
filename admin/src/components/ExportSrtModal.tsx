@@ -18,6 +18,7 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [includeUntagged, setIncludeUntagged] = useState(false);
   const [includeSteps, setIncludeSteps] = useState(true);
+  const [includeAllTypes, setIncludeAllTypes] = useState(false);
 
   // Derive the universe of tags from the loaded project content. Only "description"
   // and "title" elements are eligible for SRT, but tags from any item are exposed —
@@ -43,7 +44,7 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
       const els = stepContent[step.id] ?? [];
       for (const el of els) {
         if (el.video_timestamp_ms == null) continue;
-        if (el.type !== 'description' && el.type !== 'title') continue;
+        if (!includeAllTypes && el.type !== 'description' && el.type !== 'title') continue;
         eligible++;
         const tags = parseTagsString(el.tags);
         if (tags.length === 0) untagged++;
@@ -60,7 +61,7 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
       taggedCount: tagged,
       eligibleTotal: eligible,
     };
-  }, [steps, stepContent]);
+  }, [steps, stepContent, includeAllTypes]);
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) => {
@@ -84,6 +85,7 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
       tags: Array.from(selectedTags),
       includeUntagged,
       includeSteps,
+      includeAllTypes,
     });
     // Same-origin GET — browser sends the session cookie. Trigger via anchor so
     // the response Content-Disposition header drives the file save.
@@ -114,7 +116,7 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
       const els = stepContent[s.id] ?? [];
       for (const el of els) {
         if (el.video_timestamp_ms == null) continue;
-        if (el.type !== 'description' && el.type !== 'title') continue;
+        if (!includeAllTypes && el.type !== 'description' && el.type !== 'title') continue;
         if (counts(parseTagsString(el.tags))) n++;
       }
     }
@@ -144,6 +146,18 @@ export default function ExportSrtModal({ isOpen, onClose, projectId, steps, step
                 className="w-4 h-4"
               />
               <span>Include step titles</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={includeAllTypes}
+                onChange={(e) => setIncludeAllTypes(e.currentTarget.checked)}
+                className="w-4 h-4"
+              />
+              <span>
+                Include all element types
+                <span className="text-gray-500 text-xs ml-1">(default: description &amp; title only)</span>
+              </span>
             </label>
           </div>
 

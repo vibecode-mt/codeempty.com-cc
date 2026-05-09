@@ -116,11 +116,12 @@ export const api = {
       },
     ),
 
-  exportSrtUrl: (projectId: string, opts: { tags?: string[]; includeUntagged?: boolean; includeSteps?: boolean }) => {
+  exportSrtUrl: (projectId: string, opts: { tags?: string[]; includeUntagged?: boolean; includeSteps?: boolean; includeAllTypes?: boolean }) => {
     const params = new URLSearchParams();
     if (opts.tags && opts.tags.length > 0) params.set('tags', opts.tags.join(','));
     if (opts.includeUntagged) params.set('include_untagged', '1');
     if (opts.includeSteps === false) params.set('include_steps', '0');
+    if (opts.includeAllTypes) params.set('include_all_types', '1');
     const qs = params.toString();
     return `/api/projects/${projectId}/export-srt${qs ? '?' + qs : ''}`;
   },

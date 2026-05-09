@@ -449,6 +449,7 @@ projectRoutes.get('/:id/export-srt', requireAdmin, async (c) => {
   const tagsParam = c.req.query('tags') ?? '';
   const includeUntagged = c.req.query('include_untagged') === '1';
   const includeSteps = c.req.query('include_steps') !== '0'; // default on
+  const includeAllTypes = c.req.query('include_all_types') === '1';
   const filterTags = parseTags(tagsParam.toLowerCase());
 
   const steps = await c.env.DB.prepare(
@@ -474,10 +475,33 @@ projectRoutes.get('/:id/export-srt', requireAdmin, async (c) => {
       .all<{ type: string; content: string; video_timestamp_ms: number | null; tags: string | null }>();
     for (const el of els.results) {
       if (el.video_timestamp_ms == null) continue;
-      // Only descriptive text types translate cleanly to SRT
-      if (el.type !== 'description' && el.type !== 'title') continue;
+      let text: string;
+      if (el.type === 'description' || el.type === 'title') {
+        text = stripHtml(el.content);
+      } else if (includeAllTypes) {
+        // Non-text element types: prefer stripped content, fall back to a [type] label
+        // for items where content is a media key/URL that wouldn't read well as a caption.
+        if (el.type === 'image') {
+          let caption = '';
+          try {
+            const parsed = JSON.parse(el.content) as { caption?: string };
+            caption = stripHtml(parsed.caption ?? '').trim();
+          } catch {
+            // Legacy rows may store the URL as a plain string — no caption available.
+          }
+          text = caption || '[image]';
+        } else if (el.type === 'youtube') {
+          text = '[youtube]';
+        } else {
+          const stripped = stripHtml(el.content).trim();
+          text = stripped || `[${el.type}]`;
+        }
+      } else {
+        // Only descriptive text types translate cleanly to SRT by default
+        continue;
+      }
       items.push({
-        text: stripHtml(el.content),
+        text,
         start: el.video_timestamp_ms,
         tags: parseTags(el.tags),
       });
