@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, type ContactField, type ContactFormConfig, type ContactSubmission } from '../api';
 
 const FIELD_TYPES: ContactField['type'][] = ['text', 'email', 'tel', 'textarea', 'select', 'checkbox'];
@@ -121,9 +122,17 @@ export default function Settings() {
       </div>
 
       <div className="bg-white border rounded-xl p-6 space-y-4">
-        <div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
           <h2 className="font-semibold">Contact Form</h2>
           <p className="text-sm text-gray-500 mt-1">Configure fields, captcha, and delivery for the <code>contact</code> widget.</p>
+          </div>
+          <Link
+            to="/settings/contact-setup"
+            className="px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50 whitespace-nowrap"
+          >
+            Setup guide
+          </Link>
         </div>
         {contactLoading || !contact ? (
           <p className="text-gray-400 text-sm">Loading contact settings…</p>
