@@ -4,6 +4,7 @@ import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
 import { startPublishJob } from './publish';
 import { pagesWithWidget } from '../renderer/widgets';
+import { regenerateSitemap } from '../sitemap';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -54,6 +55,7 @@ projectRoutes.post('/', requireAdmin, async (c) => {
 
   const project = await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>();
   await invalidateProjectListCaches(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
   return c.json(project, 201);
 });
 
@@ -103,6 +105,7 @@ projectRoutes.put('/:id', requireAdmin, async (c) => {
 
   await invalidateProjectCache(c.env, existing.slug);
   if (slug !== existing.slug) await invalidateProjectCache(c.env, slug);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
 
   return c.json(await c.env.DB.prepare('SELECT * FROM projects WHERE id = ?').bind(id).first<Project>());
 });
@@ -114,6 +117,7 @@ projectRoutes.delete('/:id', requireAdmin, async (c) => {
 
   await c.env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
   await invalidateProjectCache(c.env, project.slug);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
   return c.json({ ok: true });
 });
 

@@ -206,6 +206,7 @@ export const api = {
 
   // Cache
   invalidateAll: () => req('POST', '/cache/invalidate-all'),
+  generateSitemap: () => req<{ ok: boolean; xml: string; url_count: number }>('POST', '/cache/sitemap/generate'),
 
   // i18n
   getI18nSettings: () => req<SiteI18nSettings>('GET', '/i18n/settings'),

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, Page } from '../types';
 import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
+import { regenerateSitemap } from '../sitemap';
 
 export const pageRoutes = new Hono<{ Bindings: Env }>();
 
@@ -63,6 +64,7 @@ pageRoutes.post('/', requireAdmin, async (c) => {
   }
 
   if (isHome) await invalidateHomeCache(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
   const created = await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<PageRow>();
   return c.json(created ? normalizePage(created) : null, 201);
 });
@@ -132,6 +134,7 @@ pageRoutes.put('/:id', requireAdmin, async (c) => {
   if (slug !== existing.slug) await invalidatePageCache(c.env, slug);
   if (showInMenu !== existing.show_in_menu) await invalidateNavCaches(c.env);
   if (isHome !== normalizedExisting.is_home) await invalidateHomeCache(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
 
   const updated = await c.env.DB.prepare('SELECT * FROM pages WHERE id = ?').bind(id).first<PageRow>();
   return c.json(updated ? normalizePage(updated) : null);
@@ -155,6 +158,7 @@ pageRoutes.delete('/:id', requireAdmin, async (c) => {
     .run();
   await invalidatePageCache(c.env, existing.slug);
   if ('is_home' in existing && existing.is_home) await invalidateHomeCache(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
   return c.json({ ok: true });
 });
 

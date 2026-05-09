@@ -20,6 +20,8 @@ export default function Settings() {
   const [siteTitleLoading, setSiteTitleLoading] = useState(false);
   const [siteTitleError, setSiteTitleError] = useState('');
   const [siteTitleSuccess, setSiteTitleSuccess] = useState('');
+  const [sitemapLoading, setSitemapLoading] = useState(false);
+  const [sitemapMessage, setSitemapMessage] = useState('');
 
   useEffect(() => {
     api.getI18nSettings()
@@ -71,6 +73,19 @@ export default function Settings() {
       alert('All cached pages invalidated.');
     } catch (e) {
       alert(String(e));
+    }
+  }
+
+  async function handleGenerateSitemap() {
+    setSitemapLoading(true);
+    setSitemapMessage('');
+    try {
+      const result = await api.generateSitemap();
+      setSitemapMessage(`Sitemap generated successfully (${result.url_count} URLs).`);
+    } catch (e) {
+      setSitemapMessage(String(e));
+    } finally {
+      setSitemapLoading(false);
     }
   }
 
@@ -152,9 +167,18 @@ export default function Settings() {
       <div className="bg-white border rounded-xl p-6 space-y-3">
         <h2 className="font-semibold">Cache</h2>
         <p className="text-sm text-gray-500">Pages are cached for fast delivery. Invalidate when you need to force a refresh.</p>
-        <button onClick={handleInvalidateCache} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50">
-          Invalidate all cached pages
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={handleInvalidateCache} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50">
+            Invalidate all cached pages
+          </button>
+          <button onClick={handleGenerateSitemap} disabled={sitemapLoading} className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60">
+            {sitemapLoading ? 'Generating…' : 'Generate sitemap now'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500">
+          Sitemap is automatically regenerated when published pages, projects, or blog entries are created, updated, or deleted.
+        </p>
+        {sitemapMessage && <p className="text-sm text-gray-600">{sitemapMessage}</p>}
       </div>
 
       <div className="bg-white border rounded-xl p-6 space-y-4">

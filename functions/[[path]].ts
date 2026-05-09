@@ -3,10 +3,30 @@ import { renderProject } from '../src/renderer/project';
 import { renderPage, renderHomePage } from '../src/renderer/page';
 import { renderBlogEntry } from '../src/renderer/blog';
 import { resolveLanguageFromRequest } from '../src/i18n';
+import { buildRobotsTxt, getSitemap } from '../src/sitemap';
 
 export const onRequest: PagesFunction<Env> = async (ctx) => {
   const url = new URL(ctx.request.url);
   const path = url.pathname.replace(/\/$/, '') || '/';
+
+  if (path === '/sitemap.xml') {
+    const { xml } = await getSitemap(ctx.env, url.origin);
+    return new Response(xml, {
+      headers: {
+        'content-type': 'application/xml; charset=utf-8',
+        'cache-control': 'public, max-age=300',
+      },
+    });
+  }
+
+  if (path === '/robots.txt') {
+    return new Response(buildRobotsTxt(url.origin), {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'public, max-age=300',
+      },
+    });
+  }
 
   // Let Pages static assets (favicon, JS, CSS, images, etc.) be served directly.
   if (path.includes('.')) {

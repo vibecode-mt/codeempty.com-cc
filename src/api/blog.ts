@@ -3,6 +3,7 @@ import type { Env, BlogEntry } from '../types';
 import { uuid, slugify, now } from '../utils';
 import { requireAdmin, requireOAuthOrSession } from './middleware';
 import { pagesWithWidget } from '../renderer/widgets';
+import { regenerateSitemap } from '../sitemap';
 
 export const blogRoutes = new Hono<{ Bindings: Env }>();
 
@@ -35,6 +36,7 @@ blogRoutes.post('/', requireAdmin, async (c) => {
     .run();
 
   await invalidateBlogListCaches(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
 
   return c.json(
     await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?').bind(id).first<BlogEntry>(),
@@ -81,6 +83,7 @@ blogRoutes.put('/:id', requireAdmin, async (c) => {
   await invalidateBlogCache(c.env, existing.slug);
   if (slug !== existing.slug) await invalidateBlogCache(c.env, slug);
   await invalidateBlogListCaches(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
 
   return c.json(await c.env.DB.prepare('SELECT * FROM blog_entries WHERE id = ?').bind(id).first<BlogEntry>());
 });
@@ -94,6 +97,7 @@ blogRoutes.delete('/:id', requireAdmin, async (c) => {
   await c.env.DB.prepare('DELETE FROM blog_entries WHERE id = ?').bind(c.req.param('id')).run();
   await invalidateBlogCache(c.env, existing.slug);
   await invalidateBlogListCaches(c.env);
+  await regenerateSitemap(c.env, new URL(c.req.url).origin);
   return c.json({ ok: true });
 });
 

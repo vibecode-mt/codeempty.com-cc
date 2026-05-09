@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { requireAdmin } from './middleware';
+import { regenerateSitemap } from '../sitemap';
 
 export const cacheRoutes = new Hono<{ Bindings: Env }>();
 
@@ -17,4 +18,10 @@ cacheRoutes.post('/invalidate/:key{.+}', requireAdmin, async (c) => {
   await c.env.PAGES_KV.delete(key);
   await c.env.DB.prepare('DELETE FROM cache_keys WHERE cache_key = ?').bind(key).run();
   return c.json({ ok: true });
+});
+
+cacheRoutes.post('/sitemap/generate', requireAdmin, async (c) => {
+  const origin = new URL(c.req.url).origin;
+  const result = await regenerateSitemap(c.env, origin);
+  return c.json({ ok: true, ...result });
 });
