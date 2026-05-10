@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type SiteExportPayload } from '../api';
 import { LANGUAGE_OPTIONS, languageLabel } from '../lib/languages';
 import { buildSiteArchive, readSiteArchive, rewritePayloadForImport, type SiteTransferProgress } from '../lib/site-transfer';
+import MediaOptimizer from '../components/MediaOptimizer';
 
 function inferMime(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -535,6 +536,10 @@ export default function Settings() {
         </div>
 
         {siteTransferMessage && <p className="text-sm text-gray-600">{siteTransferMessage}</p>}
+      </div>
+
+      <div className="bg-white border rounded-xl p-6">
+        <MediaOptimizer />
       </div>
     </div>
   );

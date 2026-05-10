@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import HtmlEditor from './HtmlEditor';
+import { compressImage } from '../lib/compress-image';
 
 interface Props {
   value: string;
@@ -47,7 +48,8 @@ export default function ImageUpload({ value, onChange, captionEnabled = false }:
     setUploading(true);
     setError('');
     try {
-      const { url: uploaded } = await api.uploadMedia(file);
+      const toUpload = await compressImage(file);
+      const { url: uploaded } = await api.uploadMedia(toUpload);
       setUrl(uploaded);
       emit(uploaded, caption);
     } catch (e) {

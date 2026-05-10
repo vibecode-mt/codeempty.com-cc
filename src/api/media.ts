@@ -121,6 +121,44 @@ mediaRoutes.delete('/upload/video/abort', requireAdmin, async (c) => {
   return c.json({ ok: true });
 });
 
+// List all R2-hosted image URLs tracked in the DB — used by the admin bulk optimiser.
+mediaRoutes.get('/list-images', requireAdmin, async (c) => {
+  type ImageRecord = {
+    entityType: 'content_element' | 'project';
+    entityId: string;
+    url: string;
+    rawContent?: string;
+  };
+
+  const [els, projs] = await Promise.all([
+    c.env.DB.prepare("SELECT id, content FROM content_elements WHERE type = 'image'")
+      .all<{ id: string; content: string }>(),
+    c.env.DB.prepare("SELECT id, image_url FROM projects WHERE image_url IS NOT NULL AND image_url != ''")
+      .all<{ id: string; image_url: string }>(),
+  ]);
+
+  const results: ImageRecord[] = [];
+
+  for (const el of els.results) {
+    let url = el.content;
+    try {
+      const p = JSON.parse(el.content) as { url?: string };
+      if (p.url) url = p.url;
+    } catch { /* plain URL */ }
+    if (url && url.includes('/api/media/')) {
+      results.push({ entityType: 'content_element', entityId: el.id, url, rawContent: el.content });
+    }
+  }
+
+  for (const p of projs.results) {
+    if (p.image_url?.includes('/api/media/')) {
+      results.push({ entityType: 'project', entityId: p.id, url: p.image_url });
+    }
+  }
+
+  return c.json(results);
+});
+
 // Serve media with Range request support for video seeking
 mediaRoutes.get('/:key{.+}', async (c) => {
   const key = c.req.param('key');

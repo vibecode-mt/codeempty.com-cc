@@ -381,9 +381,9 @@ export default function VideoEditor({ videoKey, onCapture, onTimeUpdate, onDurat
       if (!ctx) throw new Error('Canvas context unavailable');
       ctx.drawImage(video, 0, 0);
       const blob = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Frame capture failed'))), 'image/png'),
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Frame capture failed'))), 'image/webp', 0.85),
       );
-      const file = new File([blob], `frame_${timestampMs}.png`, { type: 'image/png' });
+      const file = new File([blob], `frame_${timestampMs}.webp`, { type: 'image/webp' });
       const { url } = await api.uploadMedia(file);
       return { url, timestampMs };
     } catch (e) {

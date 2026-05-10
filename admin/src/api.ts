@@ -196,6 +196,19 @@ export const api = {
     return res.json() as Promise<{ key: string; url: string }>;
   },
 
+  // Media — list all R2-hosted image URLs tracked in the DB (for bulk optimiser)
+  listMediaImages: () =>
+    req<Array<{ entityType: 'content_element' | 'project'; entityId: string; url: string; rawContent?: string }>>(
+      'GET',
+      '/media/list-images',
+    ),
+
+  // Media — delete an R2 object by key
+  deleteMedia: async (key: string) => {
+    const res = await fetch(`/api/media/${encodeURIComponent(key)}`, { method: 'DELETE', credentials: 'include' });
+    if (!res.ok) throw new Error('Delete failed');
+  },
+
   // Media — chunked video upload
   videoUploadInit: async (filename: string, contentType: string) => {
     return req<{ uploadId: string; key: string }>('POST', '/media/upload/video/init', { filename, contentType });
