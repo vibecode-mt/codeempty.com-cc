@@ -7,6 +7,30 @@ import { pagesWithWidget } from '../renderer/widgets';
 
 export const formRoutes = new Hono<{ Bindings: Env }>();
 
+formRoutes.post('/:id/test-webhook', requireAdmin, async (c) => {
+  await ensureFormsTables(c.env);
+  const form = await c.env.DB.prepare('SELECT * FROM forms WHERE id = ?')
+    .bind(c.req.param('id'))
+    .first<FormDefinition>();
+  if (!form) return c.json({ error: 'Form not found' }, 404);
+  const cfg = parseFormConfig(form);
+  
+  const testPayload = {
+    fields: { name: 'Test User', email: 'test@example.com', message: 'This is a test submission' },
+    source_page_slug: 'test',
+    user_agent: 'Mozilla/5.0 (test)',
+    created_at: new Date().toISOString(),
+  };
+  
+  const result = await deliverSubmission(cfg, testPayload);
+  return c.json({
+    webhook_url: cfg.delivery.webhook_url,
+    webhook_configured: !!cfg.delivery.webhook_url?.trim(),
+    test_result: result,
+    payload: testPayload,
+  });
+});
+
 formRoutes.get('/', requireOAuthOrSession, async (c) => {
   await ensureFormsTables(c.env);
   const rows = await c.env.DB.prepare('SELECT * FROM forms ORDER BY name ASC').all<FormDefinition>();
@@ -289,21 +313,36 @@ async function deliverSubmission(
   }
   const webhookUrl = cfg.delivery.webhook_url?.trim();
   if (!webhookUrl) return { ok: false, error: 'Webhook URL is not configured' };
+  
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (cfg.delivery.webhook_auth_header) headers.authorization = cfg.delivery.webhook_auth_header;
-  const resp = await fetch(webhookUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      event: 'form_submission',
-      form_slug: cfg.slug,
-      form_name: cfg.name,
-      to_email: cfg.delivery.to_email,
-      from_email: cfg.delivery.from_email,
-      payload,
-    }),
+  
+  const body = JSON.stringify({
+    event: 'form_submission',
+    form_slug: cfg.slug,
+    form_name: cfg.name,
+    to_email: cfg.delivery.to_email,
+    from_email: cfg.delivery.from_email,
+    payload,
   });
-  return resp.ok ? { ok: true } : { ok: false, error: `Delivery endpoint returned ${resp.status}` };
+  
+  try {
+    const resp = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    if (!resp.ok) {
+      const responseText = await resp.text().catch(() => '');
+      console.error(`[Form Delivery] Webhook failed: ${webhookUrl} returned ${resp.status}`, responseText.slice(0, 500));
+      return { ok: false, error: `Delivery endpoint returned ${resp.status}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e);
+    console.error(`[Form Delivery] Webhook error for ${webhookUrl}:`, errorMsg);
+    return { ok: false, error: `Delivery failed: ${errorMsg}` };
+  }
 }
 
 function hasDeliveryTarget(delivery: ReturnType<typeof parseFormConfig>['delivery']): boolean {

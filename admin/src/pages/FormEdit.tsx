@@ -25,6 +25,8 @@ export default function FormEdit() {
   const [translatedSuccessMessage, setTranslatedSuccessMessage] = useState('');
   const [translatedFields, setTranslatedFields] = useState<FormField[]>([]);
   const [translationSaving, setTranslationSaving] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
   const [form, setForm] = useState<FormDefinition>({
     id: '',
@@ -274,6 +276,18 @@ export default function FormEdit() {
             <input className="w-full border rounded px-3 py-2 text-sm" placeholder="From email" value={form.delivery.from_email} onChange={(e) => setForm((f) => ({ ...f, delivery: { ...f.delivery, from_email: e.target.value } }))} />
             <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Webhook URL" value={form.delivery.webhook_url ?? ''} onChange={(e) => setForm((f) => ({ ...f, delivery: { ...f.delivery, webhook_url: e.target.value } }))} />
             <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Auth header (optional)" value={form.delivery.webhook_auth_header ?? ''} onChange={(e) => setForm((f) => ({ ...f, delivery: { ...f.delivery, webhook_auth_header: e.target.value } }))} />
+            {!isNew && (
+              <div className="space-y-2">
+                <button onClick={testWebhook} disabled={testingWebhook || !form.delivery.webhook_url} className="w-full px-3 py-2 text-sm border rounded hover:bg-blue-50 disabled:opacity-60">
+                  {testingWebhook ? 'Testing webhook…' : 'Test Webhook'}
+                </button>
+                {webhookTestResult && (
+                  <div className={`p-2 rounded text-sm ${webhookTestResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {webhookTestResult.ok ? '✓ Webhook test successful' : `✗ ${webhookTestResult.error}`}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -423,3 +437,5 @@ function buildTranslatedFields(baseFields: FormField[], raw: string): FormField[
     };
   });
 }
+
+
