@@ -121,7 +121,7 @@ export default function FormEdit() {
     setTestingWebhook(true);
     setWebhookTestResult(null);
     try {
-      const result = await api.testFormWebhook(id);
+      const result = await api.testFormWebhook(id, { delivery: form.delivery });
       setWebhookTestResult(result.test_result);
     } catch (e) {
       setWebhookTestResult({ ok: false, error: String(e) });

@@ -17,13 +17,14 @@ export default function FormSetupGuide() {
           Forms in this CMS deliver submissions via HTTP webhooks. The easiest email path is:
           Form Widget → <strong>Webhook URL</strong> → AWS API Gateway/Lambda → SES SendEmail.
         </p>
-        <ol className="list-decimal ml-5 space-y-2 text-sm text-gray-700">
-          <li>Create an SES identity (domain/email) and verify it.</li>
-          <li>Create an IAM user/role with SES send permissions only.</li>
-          <li>Create a Lambda function that accepts JSON and calls SES SendEmail/SendRawEmail.</li>
-          <li>Expose Lambda through API Gateway (HTTPS URL).</li>
-          <li>Protect the endpoint with an auth token (e.g., Authorization header).</li>
-          <li>In <code>/admin/forms</code> → edit your form → Delivery:
+          <ol className="list-decimal ml-5 space-y-2 text-sm text-gray-700">
+            <li>Create an SES identity (domain/email) and verify it.</li>
+            <li>Create an IAM user/role with SES send permissions only.</li>
+            <li>Create a Lambda function that accepts JSON and calls SES SendEmail/SendRawEmail.</li>
+            <li>Expose Lambda through API Gateway (HTTPS URL).</li>
+            <li>Protect the endpoint with an auth token (e.g., Authorization header).</li>
+            <li>For AWS default invoke URLs, include the stage path (for example: <code>...amazonaws.com/prod/send-email</code>).</li>
+            <li>In <code>/admin/forms</code> → edit your form → Delivery:
             <ul className="list-disc ml-5 mt-1">
               <li>Delivery provider: <strong>Webhook</strong></li>
               <li>Webhook URL: your API Gateway URL</li>

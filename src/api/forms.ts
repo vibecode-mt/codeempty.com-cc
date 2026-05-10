@@ -14,6 +14,12 @@ formRoutes.post('/:id/test-webhook', requireAdmin, async (c) => {
     .first<FormDefinition>();
   if (!form) return c.json({ error: 'Form not found' }, 404);
   const cfg = parseFormConfig(form);
+  const body = await c.req.json<{ delivery?: Partial<typeof cfg.delivery> }>().catch(() => ({}));
+  const testCfg = validateFormConfig({
+    ...cfg,
+    delivery: body.delivery ? { ...cfg.delivery, ...body.delivery } : cfg.delivery,
+    updated_at: now(),
+  });
   
   const testPayload = {
     fields: { name: 'Test User', email: 'test@example.com', message: 'This is a test submission' },
@@ -22,10 +28,10 @@ formRoutes.post('/:id/test-webhook', requireAdmin, async (c) => {
     created_at: new Date().toISOString(),
   };
   
-  const result = await deliverSubmission(cfg, testPayload);
+  const result = await deliverSubmission(testCfg, testPayload);
   return c.json({
-    webhook_url: cfg.delivery.webhook_url,
-    webhook_configured: !!cfg.delivery.webhook_url?.trim(),
+    webhook_url: testCfg.delivery.webhook_url,
+    webhook_configured: !!testCfg.delivery.webhook_url?.trim(),
     test_result: result,
     payload: testPayload,
   });
@@ -316,8 +322,30 @@ async function deliverSubmission(
   
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (cfg.delivery.webhook_auth_header) headers.authorization = cfg.delivery.webhook_auth_header;
-  
+  const fields = (payload.fields && typeof payload.fields === 'object')
+    ? payload.fields as Record<string, unknown>
+    : {};
+  const lines = Object.entries(fields).map(([key, value]) => `${key}: ${String(value ?? '')}`);
+  const subject = `New form submission: ${cfg.name}`;
+  const htmlMessage = [
+    `<h2>${escapeHtml(subject)}</h2>`,
+    '<ul>',
+    ...Object.entries(fields).map(([key, value]) => `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value ?? ''))}</li>`),
+    '</ul>',
+    `<p><strong>Form:</strong> ${escapeHtml(cfg.name)} (${escapeHtml(cfg.slug)})</p>`,
+    payload.source_page_slug ? `<p><strong>Source page:</strong> ${escapeHtml(String(payload.source_page_slug))}</p>` : '',
+    payload.created_at ? `<p><strong>Submitted at:</strong> ${escapeHtml(String(payload.created_at))}</p>` : '',
+  ].join('');
+
   const body = JSON.stringify({
+    // SES/Lambda-friendly fields used by many webhook adapters.
+    from: cfg.delivery.from_email,
+    to: cfg.delivery.to_email,
+    subject,
+    message: htmlMessage,
+    text: lines.join('\n'),
+
+    // Extended CMS payload for richer handlers.
     event: 'form_submission',
     form_slug: cfg.slug,
     form_name: cfg.name,
@@ -335,7 +363,14 @@ async function deliverSubmission(
     if (!resp.ok) {
       const responseText = await resp.text().catch(() => '');
       console.error(`[Form Delivery] Webhook failed: ${webhookUrl} returned ${resp.status}`, responseText.slice(0, 500));
-      return { ok: false, error: `Delivery endpoint returned ${resp.status}` };
+      let error = `Delivery endpoint returned ${resp.status}`;
+      if (
+        resp.status === 404 &&
+        /^https:\/\/[^/]+\.execute-api\.[^/]+\.amazonaws\.com\/[^/]+\/?$/i.test(webhookUrl)
+      ) {
+        error += ' (AWS API Gateway URLs usually include a stage path like /prod/...)';
+      }
+      return { ok: false, error };
     }
     return { ok: true };
   } catch (e) {
@@ -343,6 +378,15 @@ async function deliverSubmission(
     console.error(`[Form Delivery] Webhook error for ${webhookUrl}:`, errorMsg);
     return { ok: false, error: `Delivery failed: ${errorMsg}` };
   }
+}
+
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function hasDeliveryTarget(delivery: ReturnType<typeof parseFormConfig>['delivery']): boolean {

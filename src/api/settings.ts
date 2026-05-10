@@ -105,6 +105,7 @@ settingsRoutes.post('/import', requireAdmin, async (c) => {
       await clearForImport(c.env, !!payload.includes_projects);
     }
 
+    const hasHomeColumn = await hasIsHomeColumn(c.env);
     const inserted: Record<string, number> = {};
     const allTables = [
       ...EXPORT_TABLES_ALWAYS,
@@ -134,6 +135,7 @@ settingsRoutes.post('/import', requireAdmin, async (c) => {
         const row = Object.fromEntries(
           Object.entries(rawRow).filter(([k]) => validColumns.has(k)),
         );
+        normalizeImportedRow(table, row, hasHomeColumn);
         const columns = Object.keys(row);
         if (columns.length === 0) continue;
         const placeholders = columns.map(() => '?').join(', ');
@@ -169,6 +171,10 @@ settingsRoutes.post('/import', requireAdmin, async (c) => {
       }
       if (stmts.length > 0) await c.env.DB.batch(stmts);
       inserted[table] = stmts.length;
+    }
+
+    if (hasHomeColumn) {
+      await normalizeHomePageFlag(c.env);
     }
 
     await invalidateAllCaches(c.env);
@@ -253,4 +259,25 @@ async function listAllMediaKeys(env: Env): Promise<string[]> {
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
   return keys;
+}
+
+async function hasIsHomeColumn(env: Env): Promise<boolean> {
+  const info = await env.DB.prepare('PRAGMA table_info(pages)').all<{ name: string }>();
+  return info.results.some((col) => col.name === 'is_home');
+}
+
+function normalizeImportedRow(table: string, row: Record<string, unknown>, hasHomeColumn: boolean): void {
+  if (table !== 'pages' || !hasHomeColumn) return;
+  if ('is_home' in row) return;
+  const slug = typeof row.slug === 'string' ? row.slug.trim().toLowerCase() : '';
+  row.is_home = slug === 'home' ? 1 : 0;
+}
+
+async function normalizeHomePageFlag(env: Env): Promise<void> {
+  const homes = await env.DB.prepare(
+    'SELECT id FROM pages WHERE published = 1 AND is_home = 1 ORDER BY updated_at DESC',
+  ).all<{ id: string }>();
+  if (homes.results.length <= 1) return;
+  const keepId = homes.results[0].id;
+  await env.DB.prepare('UPDATE pages SET is_home = 0 WHERE id != ?').bind(keepId).run();
 }

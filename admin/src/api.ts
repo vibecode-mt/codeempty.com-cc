@@ -269,8 +269,8 @@ export const api = {
     req<FormSubmission>('PUT', `/forms/${id}/submissions/${submissionId}`, b),
   deleteFormSubmission: (id: string, submissionId: string) =>
     req<{ ok: boolean }>('DELETE', `/forms/${id}/submissions/${submissionId}`),
-   testFormWebhook: (id: string) =>
-     req<{ webhook_url: string; webhook_configured: boolean; test_result: { ok: boolean; error?: string }; payload: unknown }>('POST', `/forms/${id}/test-webhook`),
+   testFormWebhook: (id: string, body?: { delivery?: Partial<DeliveryConfig> }) =>
+     req<{ webhook_url: string; webhook_configured: boolean; test_result: { ok: boolean; error?: string }; payload: unknown }>('POST', `/forms/${id}/test-webhook`, body),
 };
 
 // Shared types (duplicated from src/types.ts for the admin bundle)

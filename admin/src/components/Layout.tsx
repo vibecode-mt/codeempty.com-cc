@@ -50,6 +50,15 @@ export default function Layout({ user, onLogout, children }: Props) {
 
         {/* Nav */}
         <nav className="flex-1 py-4 flex flex-col gap-0.5 px-2">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener"
+            className={`flex items-center rounded text-sm font-medium transition-colors text-gray-300 hover:bg-gray-800 hover:text-white ${open ? 'px-3 py-2 gap-2' : 'px-0 py-2 justify-center'}`}
+            title={!open ? 'Visit Website' : undefined}
+          >
+            {open ? 'Visit Website ↗' : <span className="text-xs font-bold">↗</span>}
+          </a>
           {nav.map((item) => (
             <NavLink
               key={item.to}

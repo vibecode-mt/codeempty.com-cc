@@ -16,8 +16,73 @@ export async function renderHomePage(env: Env, language = 'en'): Promise<Respons
     : await env.DB.prepare(
       'SELECT slug FROM pages WHERE slug = ? AND published = 1 LIMIT 1',
     ).bind('home').first<{ slug: string }>();
-  if (!home) return new Response('Not Found', { status: 404, headers: { 'content-type': 'text/html' } });
+  if (!home) return renderUpgradePage(env, language);
   return renderPageBy('slug', home.slug, env, language);
+}
+
+async function renderUpgradePage(env: Env, language: string): Promise<Response> {
+  const [scriptsResult, navPages, languageOptions, siteTitle] = await Promise.all([
+    env.DB.prepare('SELECT * FROM common_scripts WHERE enabled = 1 ORDER BY sort_order ASC').all<CommonScript>(),
+    fetchNavPages(env, language),
+    getPublishedLanguageOptions(env),
+    getSiteTitle(env, language),
+  ]);
+  const copy = upgradeCopy(language);
+  const body = `
+    <section style="max-width:780px;margin:3rem auto;padding:2rem;border:1px solid #e5e7eb;border-radius:.9rem;background:#fafafa">
+      <h1 class="page-title" style="font-size:2rem;margin-bottom:.6rem">${escHtml(copy.title)}</h1>
+      <p style="color:#4b5563;font-size:1.05rem;line-height:1.7;margin-bottom:.9rem">${escHtml(copy.body)}</p>
+      <p style="color:#6b7280;font-size:.95rem;line-height:1.7">${escHtml(copy.body2)}</p>
+    </section>
+  `;
+  const html = renderLayout({
+    title: `${copy.title} — ${siteTitle}`,
+    body,
+    scripts: scriptsResult.results,
+    navPages,
+    language,
+    languageOptions,
+    metaDescription: copy.body,
+    siteTitle,
+  });
+  return new Response(html, { status: 200, headers: { 'content-type': 'text/html;charset=utf-8' } });
+}
+
+function upgradeCopy(language: string): { title: string; body: string; body2: string } {
+  const base = language.split('-')[0].toLowerCase();
+  const map: Record<string, { title: string; body: string; body2: string }> = {
+    en: {
+      title: 'Website is being upgraded',
+      body: 'We are currently updating this site and will be back soon.',
+      body2: 'Thank you for your patience. Please check back in a little while.',
+    },
+    es: {
+      title: 'El sitio web se está actualizando',
+      body: 'Estamos actualizando este sitio y volveremos pronto.',
+      body2: 'Gracias por tu paciencia. Vuelve a visitarnos en breve.',
+    },
+    fr: {
+      title: 'Le site est en cours de mise à niveau',
+      body: 'Nous mettons actuellement ce site à jour et reviendrons bientôt.',
+      body2: 'Merci pour votre patience. Revenez dans un moment.',
+    },
+    de: {
+      title: 'Die Website wird aktualisiert',
+      body: 'Wir aktualisieren diese Website gerade und sind bald zurück.',
+      body2: 'Vielen Dank für Ihre Geduld. Bitte schauen Sie bald wieder vorbei.',
+    },
+    zh: {
+      title: '网站正在升级',
+      body: '我们正在更新网站，很快会恢复访问。',
+      body2: '感谢您的耐心等待，请稍后再来。',
+    },
+    ja: {
+      title: 'サイトをアップグレード中です',
+      body: '現在このサイトを更新しており、まもなく再開します。',
+      body2: 'しばらくしてからもう一度アクセスしてください。',
+    },
+  };
+  return map[base] ?? map.en;
 }
 
 async function renderPageBy(field: 'slug' | 'id', value: string, env: Env, language: string): Promise<Response> {

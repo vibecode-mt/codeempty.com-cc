@@ -305,6 +305,8 @@ POST   /api/settings/import                            import site payload (writ
 
 In the admin UI, **Export Site** with projects enabled creates a `.codeempty-site` archive (export payload + all media files) with a progress bar.
 
+Home page metadata (`pages.is_home`) is preserved during site export/import. If no published page is marked as home, `/` serves a localized "site is being upgraded" maintenance page instead of a plain 404.
+
 ### Health
 
 ```
