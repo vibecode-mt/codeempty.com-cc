@@ -1096,7 +1096,7 @@ projectRoutes.post('/:id/publish', requireAdmin, async (c) => {
 
 // Pull every R2 key referenced by a project's rows. Owned-by-R2 fields only —
 // external URLs (youtube/url/user_comment.profile_url) are ignored.
-function collectMediaKeys(project: Project, elements: ContentElement[]): string[] {
+function collectMediaKeys(project: Project, elements: ContentElement[], includeVideo: boolean): string[] {
   const keys = new Set<string>();
   const fromUrl = (u: string | null | undefined) => {
     if (!u) return;
@@ -1104,8 +1104,10 @@ function collectMediaKeys(project: Project, elements: ContentElement[]): string[
     if (m) keys.add(m[1]);
   };
   fromUrl(project.image_url);
-  fromUrl(project.video_url);
-  if (project.video_key) keys.add(project.video_key);
+  if (includeVideo) {
+    fromUrl(project.video_url);
+    if (project.video_key) keys.add(project.video_key);
+  }
   for (const el of elements) {
     if (el.type === 'image') {
       try {
@@ -1374,13 +1376,14 @@ projectRoutes.post(
 
 projectRoutes.get('/:id/export-data', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
+  const includeVideo = c.req.query('include_video') === '1';
   let snapshot: SnapshotShape;
   try {
     snapshot = await buildSnapshot(c.env, projectId);
   } catch (e) {
     return c.json({ error: String(e) }, 404);
   }
-  const mediaKeys = collectMediaKeys(snapshot.project, snapshot.elements);
+  const mediaKeys = collectMediaKeys(snapshot.project, snapshot.elements, includeVideo);
   const media = mediaKeys.map((key) => ({ key, url: `/api/media/${key}` }));
   return c.json({
     manifest: {

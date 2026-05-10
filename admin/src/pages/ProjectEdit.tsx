@@ -239,10 +239,11 @@ export default function ProjectEdit() {
 
   async function handleExportBundle() {
     if (!pid || exporting) return;
+    const includeVideo = !!videoKey && confirm('Include source video file in the export bundle? Click Cancel to export without video.');
     setExportError('');
     setExporting({ phase: 'fetching-media', current: 0, total: 0, label: 'Loading project data…' });
     try {
-      const data = await api.exportData(pid);
+      const data = await api.exportData(pid, includeVideo);
       const blob = await buildBundle(data, (p) => setExporting(p));
       downloadBlob(blob, `${data.project.slug || 'project'}.codeempty`);
     } catch (e) {

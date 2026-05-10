@@ -14,6 +14,7 @@ import { destinationRoutes } from './destinations';
 import { publishRoutes } from './publish';
 import { formRoutes } from './forms';
 import { i18nRoutes } from './i18n';
+import { settingsRoutes } from './settings';
 
 export const app = new Hono<{ Bindings: Env }>().basePath('/api');
 
@@ -32,6 +33,7 @@ app.route('/destinations', destinationRoutes);
 app.route('/publish', publishRoutes);
 app.route('/forms', formRoutes);
 app.route('/i18n', i18nRoutes);
+app.route('/settings', settingsRoutes);
 
 app.get('/health', (c) => c.json({ ok: true }));
 

@@ -64,6 +64,18 @@ common_scripts                  injectable head/body scripts (analytics, etc.)
 
 Migrations live in `migrations/`. Apply locally: `npm run db:migrate:local`. Apply to prod: `npm run db:migrate`.
 
+Before running migrations, export a backup:
+
+```bash
+# local
+npx wrangler d1 export DB --local --output backups/local-before-migration.sql
+
+# production
+npx wrangler d1 export DB --output backups/prod-before-migration.sql
+```
+
+`wrangler d1 migrations apply` does not wipe a database on its own; it executes the SQL in migration files. Any destructive SQL in those files (for example `DROP TABLE`) will still remove data.
+
 ---
 
 ## Cloudflare setup (one-time)
@@ -227,6 +239,7 @@ DELETE /api/projects/:id/versions/:vid        delete (write)
 
 ```
 GET    /api/projects/:id/export-data          JSON + media key list; browser zips locally (write)
+                                              query: include_video=1|0
 POST   /api/projects/import                   atomic batch; mode=create|replace; idempotency-keyed (write)
 ```
 
@@ -274,6 +287,14 @@ DELETE /api/media/:key                        (write)
 ```
 POST   /api/cache/invalidate-all              wipes KV + cache_keys table (write)
 POST   /api/cache/invalidate/:key             single key (write)
+```
+
+### Settings backup/restore
+
+```
+GET    /api/settings/export?include_projects=1|0      export site JSON (write)
+POST   /api/settings/import                            import site JSON (write)
+                                                      body: { payload, mode: "merge" | "replace" }
 ```
 
 ### Health

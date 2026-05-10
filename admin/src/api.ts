@@ -52,8 +52,8 @@ export const api = {
     ),
 
   // Bundle export — server returns metadata + media key list; browser zips
-  exportData: (projectId: string) =>
-    req<ExportData>('GET', `/projects/${projectId}/export-data`),
+  exportData: (projectId: string, includeVideo = false) =>
+    req<ExportData>('GET', `/projects/${projectId}/export-data?include_video=${includeVideo ? '1' : '0'}`),
 
   // Publish destinations
   listDestinations: () => req<PublishDestination[]>('GET', '/destinations'),
@@ -208,6 +208,25 @@ export const api = {
   invalidateAll: () => req('POST', '/cache/invalidate-all'),
   generateSitemap: () => req<{ ok: boolean; xml: string; url_count: number }>('POST', '/cache/sitemap/generate'),
 
+  // Site import/export
+  exportSite: async (includeProjects: boolean) => {
+    const res = await fetch(`/api/settings/export?include_projects=${includeProjects ? '1' : '0'}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string }).error ?? res.statusText);
+    }
+    return res.json() as Promise<SiteExportPayload>;
+  },
+  importSite: (payload: SiteExportPayload, mode: 'replace' | 'merge') =>
+    req<{ ok: boolean; mode: 'replace' | 'merge'; includes_projects: boolean; inserted: Record<string, number> }>(
+      'POST',
+      '/settings/import',
+      { payload, mode },
+    ),
+
   // i18n
   getI18nSettings: () => req<SiteI18nSettings>('GET', '/i18n/settings'),
   updateI18nSettings: (b: SiteI18nSettings) => req<SiteI18nSettings>('PUT', '/i18n/settings', b),
@@ -312,6 +331,12 @@ export interface ExportData {
   steps: ProjectStep[];
   elements: ContentElement[];
   media: { key: string; url: string }[];
+}
+export interface SiteExportPayload {
+  format_version: number;
+  exported_at: string;
+  includes_projects: boolean;
+  tables: Record<string, Array<Record<string, unknown>>>;
 }
 
 export type FieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox';

@@ -6,6 +6,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   currentProjectId: string | null;
+  forceMode?: 'create' | 'replace';
   // Called after a successful import. Receives the destination project id —
   // either the same as currentProjectId (replace) or a new id (create).
   onImported: (projectId: string) => void;
@@ -33,7 +34,7 @@ function inferMime(filename: string): string {
   }
 }
 
-export default function ImportBundleModal({ isOpen, onClose, currentProjectId, onImported }: Props) {
+export default function ImportBundleModal({ isOpen, onClose, currentProjectId, forceMode, onImported }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<ParsedBundle | null>(null);
   const [parseError, setParseError] = useState('');
@@ -47,11 +48,14 @@ export default function ImportBundleModal({ isOpen, onClose, currentProjectId, o
 
   useEffect(() => {
     if (!isOpen) return;
-    api.listProjects().then(setProjects).catch(() => { /* ignore */ });
+    if (!forceMode || forceMode === 'replace') {
+      api.listProjects().then(setProjects).catch(() => { /* ignore */ });
+    }
+    if (forceMode) setMode(forceMode);
     if (currentProjectId) {
       setTargetId(currentProjectId);
     }
-  }, [isOpen, currentProjectId]);
+  }, [isOpen, currentProjectId, forceMode]);
 
   function reset() {
     setFile(null);
@@ -77,7 +81,8 @@ export default function ImportBundleModal({ isOpen, onClose, currentProjectId, o
 
   async function handleImport() {
     if (!parsed) return;
-    if (mode === 'replace' && !targetId) {
+    const effectiveMode = forceMode ?? mode;
+    if (effectiveMode === 'replace' && !targetId) {
       setError('Pick a target project to replace');
       return;
     }
@@ -113,10 +118,10 @@ export default function ImportBundleModal({ isOpen, onClose, currentProjectId, o
         project,
         steps: parsed.steps,
         elements,
-        mode,
-        target_project_id: mode === 'replace' ? targetId : undefined,
+        mode: effectiveMode,
+        target_project_id: effectiveMode === 'replace' ? targetId : undefined,
         idempotency_key: crypto.randomUUID(),
-        label: mode === 'replace' ? `Imported bundle (${file?.name ?? 'unnamed'})` : undefined,
+        label: effectiveMode === 'replace' ? `Imported bundle (${file?.name ?? 'unnamed'})` : undefined,
       });
 
       onImported(resp.project_id);
@@ -171,21 +176,23 @@ export default function ImportBundleModal({ isOpen, onClose, currentProjectId, o
                 <div className="text-xs text-gray-400">From {parsed.manifest.source_slug} on {parsed.manifest.exported_at.split('T')[0]}</div>
               </div>
 
-              <div>
-                <h3 className="text-sm font-semibold mb-2">Mode</h3>
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} />
-                    <span>Create as a new project (slug auto-suffixed if it collides)</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="radio" checked={mode === 'replace'} onChange={() => setMode('replace')} />
-                    <span>Replace an existing project</span>
-                  </label>
+              {!forceMode && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-2">Mode</h3>
+                  <div className="space-y-1.5">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" checked={mode === 'create'} onChange={() => setMode('create')} />
+                      <span>Create as a new project (slug auto-suffixed if it collides)</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="radio" checked={mode === 'replace'} onChange={() => setMode('replace')} />
+                      <span>Replace an existing project</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {mode === 'replace' && (
+              {(forceMode ?? mode) === 'replace' && (
                 <div>
                   <label className="block text-sm font-medium mb-1">Target project</label>
                   <select

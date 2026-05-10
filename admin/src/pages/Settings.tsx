@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type SiteExportPayload } from '../api';
 import { LANGUAGE_OPTIONS, languageLabel } from '../lib/languages';
 
 export default function Settings() {
@@ -22,6 +22,12 @@ export default function Settings() {
   const [siteTitleSuccess, setSiteTitleSuccess] = useState('');
   const [sitemapLoading, setSitemapLoading] = useState(false);
   const [sitemapMessage, setSitemapMessage] = useState('');
+  const [siteExportIncludeProjects, setSiteExportIncludeProjects] = useState(false);
+  const [siteExportLoading, setSiteExportLoading] = useState(false);
+  const [siteTransferMessage, setSiteTransferMessage] = useState('');
+  const [siteImportLoading, setSiteImportLoading] = useState(false);
+  const [siteImportPayload, setSiteImportPayload] = useState<SiteExportPayload | null>(null);
+  const [siteImportMode, setSiteImportMode] = useState<'merge' | 'replace'>('merge');
 
   useEffect(() => {
     api.getI18nSettings()
@@ -134,6 +140,66 @@ export default function Settings() {
       setSiteTitleError(String(e));
     } finally {
       setSiteTitleLoading(false);
+    }
+  }
+
+  async function handleExportSite() {
+    setSiteExportLoading(true);
+    setSiteTransferMessage('');
+    try {
+      const payload = await api.exportSite(siteExportIncludeProjects);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `site-export-${payload.exported_at.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      setSiteTransferMessage(`Site export ready (${payload.includes_projects ? 'with' : 'without'} projects).`);
+    } catch (e) {
+      setSiteTransferMessage(String(e));
+    } finally {
+      setSiteExportLoading(false);
+    }
+  }
+
+  async function handleImportFile(file: File) {
+    setSiteTransferMessage('');
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as SiteExportPayload;
+      if (parsed?.format_version !== 1 || !parsed.tables || typeof parsed.tables !== 'object') {
+        throw new Error('Invalid export file');
+      }
+      setSiteImportPayload(parsed);
+      setSiteTransferMessage(`Loaded export from ${parsed.exported_at} (${parsed.includes_projects ? 'includes' : 'excludes'} projects).`);
+    } catch (e) {
+      setSiteImportPayload(null);
+      setSiteTransferMessage(String(e));
+    }
+  }
+
+  async function handleImportSite() {
+    if (!siteImportPayload) {
+      setSiteTransferMessage('Choose a valid site export file first.');
+      return;
+    }
+    if (siteImportMode === 'replace' && !confirm('Replace mode will clear existing site content before importing. Continue?')) return;
+    setSiteImportLoading(true);
+    setSiteTransferMessage('');
+    try {
+      const result = await api.importSite(siteImportPayload, siteImportMode);
+      setSiteTransferMessage(
+        result.mode === 'replace'
+          ? 'Site import complete. Existing content was replaced.'
+          : 'Site import complete. Existing content was merged/upserted.',
+      );
+    } catch (e) {
+      setSiteTransferMessage(String(e));
+    } finally {
+      setSiteImportLoading(false);
     }
   }
 
@@ -316,6 +382,68 @@ export default function Settings() {
             {siteTitleLoading ? 'Saving…' : 'Save Website Title'}
           </button>
         </form>
+      </div>
+
+      <div className="bg-white border rounded-xl p-6 space-y-4">
+        <h2 className="font-semibold">Site Backup & Restore</h2>
+        <p className="text-sm text-gray-500">
+          Export/import your site data as JSON. Media files are not included. Project inclusion is optional.
+        </p>
+
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="font-medium text-sm">Export Site</h3>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={siteExportIncludeProjects}
+              onChange={(e) => setSiteExportIncludeProjects(e.target.checked)}
+            />
+            Include projects (projects, steps, project content, and project translations)
+          </label>
+          <button
+            onClick={handleExportSite}
+            disabled={siteExportLoading}
+            className="px-4 py-2 border text-sm rounded-lg hover:bg-gray-50 disabled:opacity-60"
+          >
+            {siteExportLoading ? 'Exporting…' : 'Export Site'}
+          </button>
+        </div>
+
+        <div className="border rounded-lg p-4 space-y-3">
+          <h3 className="font-medium text-sm">Import Site</h3>
+          <div>
+            <label className="block text-sm font-medium mb-1">Export file (.json)</label>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                if (f) handleImportFile(f);
+              }}
+              className="w-full text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Import mode</label>
+            <select
+              value={siteImportMode}
+              onChange={(e) => setSiteImportMode(e.target.value as 'merge' | 'replace')}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="merge">Add/Merge with existing content</option>
+              <option value="replace">Clear existing content then import</option>
+            </select>
+          </div>
+          <button
+            onClick={handleImportSite}
+            disabled={!siteImportPayload || siteImportLoading}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60"
+          >
+            {siteImportLoading ? 'Importing…' : 'Import Site'}
+          </button>
+        </div>
+
+        {siteTransferMessage && <p className="text-sm text-gray-600">{siteTransferMessage}</p>}
       </div>
     </div>
   );

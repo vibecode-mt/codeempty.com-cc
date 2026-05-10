@@ -38,3 +38,11 @@ npm run dev            # wrangler pages dev dist --port 8788
 npm run db:migrate:local   # Apply D1 migrations locally (first time)
 npm run build          # Production build of admin SPA
 ```
+
+## Migration safety (required)
+- Before any D1 migration (local or production), export a backup first.
+- Local backup example:
+  - `npx wrangler d1 export DB --local --output backups\local-before-migration.sql`
+- Production backup example:
+  - `npx wrangler d1 export DB --output backups\prod-before-migration.sql`
+- `wrangler d1 migrations apply` only executes migration SQL files in order. It does **not** clear the entire database by itself; data loss only happens if a migration contains destructive SQL (for example `DROP TABLE`, `DELETE`, or table rebuild/copy patterns).

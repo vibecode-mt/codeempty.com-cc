@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, type Project } from '../api';
+import ImportBundleModal from '../components/ImportBundleModal';
 
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showImportBundle, setShowImportBundle] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     api.listProjects().then(setProjects).finally(() => setLoading(false));
@@ -27,9 +30,18 @@ export default function Projects() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Projects</h1>
-        <Link to="/projects/new" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
-          + New project
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowImportBundle(true)}
+            className="px-4 py-2 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700"
+            title="Upload a .codeempty file to create a new project"
+          >
+            📥 Import bundle
+          </button>
+          <Link to="/projects/new" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+            + New project
+          </Link>
+        </div>
       </div>
       {projects.length === 0 ? (
         <p className="text-gray-400">No projects yet.</p>
@@ -70,6 +82,17 @@ export default function Projects() {
           </table>
         </div>
       )}
+
+      <ImportBundleModal
+        currentProjectId={null}
+        forceMode="create"
+        isOpen={showImportBundle}
+        onClose={() => setShowImportBundle(false)}
+        onImported={(newProjectId) => {
+          setShowImportBundle(false);
+          navigate(`/projects/${newProjectId}`);
+        }}
+      />
     </div>
   );
 }
