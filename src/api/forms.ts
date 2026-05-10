@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { FormDefinition, FormSubmission, Env } from '../types';
 import { now, slugify, uuid } from '../utils';
-import { requireAdmin, requireOAuthOrSession } from './middleware';
+import { requireAdmin } from './middleware';
 import { ensureFormsTables, parseFormConfig, validateFormConfig } from '../forms';
 import { pagesWithWidget } from '../renderer/widgets';
 
@@ -31,7 +31,7 @@ formRoutes.post('/:id/test-webhook', requireAdmin, async (c) => {
   });
 });
 
-formRoutes.get('/', requireOAuthOrSession, async (c) => {
+formRoutes.get('/', requireAdmin, async (c) => {
   await ensureFormsTables(c.env);
   const rows = await c.env.DB.prepare('SELECT * FROM forms ORDER BY name ASC').all<FormDefinition>();
   return c.json(rows.results.map(parseFormConfig));
@@ -93,7 +93,7 @@ formRoutes.post('/', requireAdmin, async (c) => {
   return c.json(cfg, 201);
 });
 
-formRoutes.get('/:id', requireOAuthOrSession, async (c) => {
+formRoutes.get('/:id', requireAdmin, async (c) => {
   await ensureFormsTables(c.env);
   const row = await c.env.DB.prepare('SELECT * FROM forms WHERE id = ? OR slug = ?')
     .bind(c.req.param('id'), c.req.param('id'))

@@ -7,6 +7,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>();
 
 // First-time setup — creates the admin user, returns plain-text password once
 authRoutes.post('/setup', async (c) => {
+  const setupSecret = c.env.SETUP_SECRET?.trim();
+  if (!setupSecret) {
+    return c.json({ error: 'Server setup is disabled: SETUP_SECRET is not configured' }, 503);
+  }
+  const providedSecret = c.req.header('x-setup-secret')?.trim();
+  if (!providedSecret || providedSecret !== setupSecret) {
+    return c.json({ error: 'Invalid setup secret' }, 401);
+  }
   const existing = await c.env.DB.prepare('SELECT id FROM users LIMIT 1').first();
   if (existing) {
     return c.json({ error: 'Already set up' }, 400);

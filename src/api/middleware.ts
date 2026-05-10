@@ -21,17 +21,10 @@ export const requireOAuthOrSession = createMiddleware<{ Bindings: Env }>(async (
   // Try bearer token first
   const auth = c.req.header('Authorization');
   if (auth?.startsWith('Bearer ')) {
-    const token = auth.slice(7);
-    const oauthToken = await c.env.DB.prepare(
-      "SELECT * FROM oauth_tokens WHERE token = ? AND expires_at > datetime('now')",
-    )
-      .bind(token)
-      .first();
-    if (oauthToken) {
-      await next();
-      return;
-    }
-    return c.json({ error: 'Invalid or expired token' }, 401);
+    const result = await checkOAuthScope(c.env, auth, 'read');
+    if (!result.ok) return c.json({ error: result.reason }, result.status);
+    await next();
+    return;
   }
 
   // Fall back to session cookie

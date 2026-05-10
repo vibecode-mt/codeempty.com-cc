@@ -16,7 +16,22 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   // Auth
-  setup: (b: { username?: string }) => req<{ username: string; password: string; message: string }>('POST', '/auth/setup', b),
+  setup: async (setupSecret: string) => {
+    const res = await fetch(`${BASE}/auth/setup`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-setup-secret': setupSecret,
+      },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error((err as { error?: string }).error ?? res.statusText);
+    }
+    return res.json() as Promise<{ username: string; password: string; message: string }>;
+  },
   login: (username: string, password: string) => req<{ ok: boolean }>('POST', '/auth/login', { username, password }),
   logout: () => req<{ ok: boolean }>('POST', '/auth/logout'),
   me: () => req<{ username: string; is_admin: number }>('GET', '/auth/me'),

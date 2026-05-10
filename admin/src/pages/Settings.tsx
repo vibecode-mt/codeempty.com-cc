@@ -462,6 +462,24 @@ export default function Settings() {
           >
             {siteExportLoading ? 'Exporting…' : 'Export Site'}
           </button>
+          {siteTransferProgress && siteTransferProgress.phase !== 'uploading-media' && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span>{siteTransferProgress.label}</span>
+                <span className="font-mono text-xs">
+                  {siteTransferProgress.total > 0 ? `${siteTransferProgress.current} / ${siteTransferProgress.total}` : '…'}
+                </span>
+              </div>
+              {siteTransferProgress.total > 0 && (
+                <div className="w-full h-2 bg-blue-100 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all"
+                    style={{ width: `${Math.min(100, Math.round((siteTransferProgress.current / siteTransferProgress.total) * 100))}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="border rounded-lg p-4 space-y-3">
@@ -496,26 +514,25 @@ export default function Settings() {
           >
             {siteImportLoading ? 'Importing…' : 'Import Site'}
           </button>
-        </div>
-
-        {siteTransferProgress && (
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <span>{siteTransferProgress.label}</span>
-              <span className="font-mono text-xs">
-                {siteTransferProgress.total > 0 ? `${siteTransferProgress.current} / ${siteTransferProgress.total}` : '…'}
-              </span>
-            </div>
-            {siteTransferProgress.total > 0 && (
-              <div className="w-full h-2 bg-blue-100 rounded overflow-hidden">
-                <div
-                  className="h-full bg-blue-600 transition-all"
-                  style={{ width: `${Math.min(100, Math.round((siteTransferProgress.current / siteTransferProgress.total) * 100))}%` }}
-                />
+          {siteTransferProgress && siteTransferProgress.phase === 'uploading-media' && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span>{siteTransferProgress.label}</span>
+                <span className="font-mono text-xs">
+                  {siteTransferProgress.total > 0 ? `${siteTransferProgress.current} / ${siteTransferProgress.total}` : '…'}
+                </span>
               </div>
-            )}
-          </div>
-        )}
+              {siteTransferProgress.total > 0 && (
+                <div className="w-full h-2 bg-blue-100 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all"
+                    style={{ width: `${Math.min(100, Math.round((siteTransferProgress.current / siteTransferProgress.total) * 100))}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {siteTransferMessage && <p className="text-sm text-gray-600">{siteTransferMessage}</p>}
       </div>

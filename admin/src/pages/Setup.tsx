@@ -3,6 +3,7 @@ import { api } from '../api';
 
 export default function Setup({ onSetup }: { onSetup: () => void }) {
   const [result, setResult] = useState<{ username: string; password: string; message: string } | null>(null);
+  const [setupSecret, setSetupSecret] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -10,7 +11,12 @@ export default function Setup({ onSetup }: { onSetup: () => void }) {
     setLoading(true);
     setError('');
     try {
-      const r = await api.setup({});
+      const secret = setupSecret.trim();
+      if (!secret) {
+        setError('Setup secret is required');
+        return;
+      }
+      const r = await api.setup(secret);
       setResult(r);
     } catch (e) {
       setError(String(e));
@@ -39,6 +45,16 @@ export default function Setup({ onSetup }: { onSetup: () => void }) {
           </div>
         ) : (
           <>
+            <div>
+              <label className="block text-sm font-medium mb-1">Setup secret</label>
+              <input
+                type="password"
+                value={setupSecret}
+                onChange={(e) => setSetupSecret(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                placeholder="Value of SETUP_SECRET"
+              />
+            </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button
               onClick={handleSetup}

@@ -4,6 +4,8 @@ A personal portfolio + project blog with a built-in CMS, hosted entirely on the 
 
 > **About the site.** I'm Johnny — 20+ years coding professionally and experimenting with AI workflows long before "vibe coding" became a thing. After losing my job on Apr 30 2026 I started this YouTube channel and CodeEmpty.com to share the practical side of AI-assisted software development openly: real projects, real prompts, real debugging, real production deploys. CodeEmpty.com is itself one of those projects. Each project published here includes the full YouTube recording, the prompts used during development, screenshots, deployment steps, debugging notes, and either a live link or a downloadable build. See [/about](https://codeempty.com/about) for the full story and the future plan toward [OpenVibeHub.com](https://openvibehub.com).
 
+The repository/channel kickoff video is here: [https://www.youtube.com/watch?v=RO1P87iSexY&t=120s](https://www.youtube.com/watch?v=RO1P87iSexY&t=120s). The YouTube channel contains the ongoing vibe-coding updates for this repo, including deployment walkthroughs.
+
 ---
 
 ## What's in here
@@ -105,6 +107,7 @@ After the Pages project exists, **Settings → Functions**:
 - D1 binding: `DB` → `codeempty-db`
 - KV binding: `PAGES_KV` → `codeempty-pages-kv`
 - R2 binding: `MEDIA` → `codeempty-media`
+- Environment variable: `SETUP_SECRET` → random strong value used once at `/admin/setup`
 
 Redeploy so the bindings take effect.
 
@@ -116,7 +119,7 @@ npm run db:migrate           # applies every migration in migrations/ to remote 
 ```
 
 ### 9. Create your admin
-Visit `https://<your-domain>/admin/setup` → click **Create Admin Account**. Save the generated password — you can also reset it later from the Settings page.
+Visit `https://<your-domain>/admin/setup`, enter `SETUP_SECRET`, then click **Create Admin Account**. Save the generated password — it is shown once.
 
 ---
 
@@ -188,6 +191,8 @@ Add an OAuth app on the destination (`/admin/oauth`) with `write` scope. Add a d
 ## API
 
 Every admin endpoint accepts **either** a session cookie (browser admin) **or** an `Authorization: Bearer <token>` header where the token has the right OAuth scope. Read-side endpoints accept any valid bearer; write-side endpoints require `write` scope. The bearer's scope check uses a `write` ⊃ `read` hierarchy, so a write-scoped token also satisfies read-scoped routes.
+
+The API surface is intended to fully cover every operation available in `/admin` (projects, pages, blog, scripts, destinations, forms, i18n, media, cache, and settings backup/restore).
 
 ### OAuth — get a token
 
@@ -297,6 +302,8 @@ GET    /api/settings/export?include_projects=1|0      export site data JSON (wri
 POST   /api/settings/import                            import site payload (write)
                                                       body: { payload, mode: "merge" | "replace" }
 ```
+
+In the admin UI, **Export Site** with projects enabled creates a `.codeempty-site` archive (export payload + all media files) with a progress bar.
 
 ### Health
 

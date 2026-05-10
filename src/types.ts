@@ -3,6 +3,7 @@ export interface Env {
   PAGES_KV: KVNamespace;
   MEDIA: R2Bucket;
   ASSETS: Fetcher;
+  SETUP_SECRET?: string;
 }
 
 export interface User {
