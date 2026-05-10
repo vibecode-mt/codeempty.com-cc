@@ -5,6 +5,7 @@ import { requireAdmin, requireOAuthOrSession } from './middleware';
 import { startPublishJob } from './publish';
 import { pagesWithWidget } from '../renderer/widgets';
 import { regenerateSitemap } from '../sitemap';
+import { ensureI18nSchema } from '../i18n';
 
 export const projectRoutes = new Hono<{ Bindings: Env }>();
 
@@ -824,6 +825,33 @@ interface SnapshotShape {
   elements: ContentElement[];
 }
 
+interface ProjectTranslationRow {
+  project_id: string;
+  language: string;
+  title: string | null;
+  description: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+}
+
+interface ProjectStepTranslationRow {
+  step_id: string;
+  language: string;
+  title: string | null;
+}
+
+interface ContentElementTranslationRow {
+  content_element_id: string;
+  language: string;
+  content: string | null;
+}
+
+interface BundleSnapshotShape extends SnapshotShape {
+  project_translations: ProjectTranslationRow[];
+  project_step_translations: ProjectStepTranslationRow[];
+  content_element_translations: ContentElementTranslationRow[];
+}
+
 async function buildSnapshot(env: Env, projectId: string): Promise<SnapshotShape> {
   const project = await env.DB.prepare('SELECT * FROM projects WHERE id = ?')
     .bind(projectId)
@@ -849,6 +877,47 @@ async function buildSnapshot(env: Env, projectId: string): Promise<SnapshotShape
   }
 
   return { format_version: 1, project, steps, elements };
+}
+
+async function buildBundleSnapshot(env: Env, projectId: string): Promise<BundleSnapshotShape> {
+  const snapshot = await buildSnapshot(env, projectId);
+  const stepIds = snapshot.steps.map((s) => s.id);
+  const elementIds = snapshot.elements.map((e) => e.id);
+
+  const projectTranslations = await env.DB.prepare(
+    `SELECT project_id, language, title, description, seo_title, seo_description
+       FROM project_translations
+      WHERE project_id = ?`,
+  )
+    .bind(projectId)
+    .all<ProjectTranslationRow>();
+
+  const projectStepTranslations = stepIds.length > 0
+    ? await env.DB.prepare(
+      `SELECT step_id, language, title
+         FROM project_step_translations
+        WHERE step_id IN (${stepIds.map(() => '?').join(',')})`,
+    )
+      .bind(...stepIds)
+      .all<ProjectStepTranslationRow>()
+    : { results: [] as ProjectStepTranslationRow[] };
+
+  const contentElementTranslations = elementIds.length > 0
+    ? await env.DB.prepare(
+      `SELECT content_element_id, language, content
+         FROM content_element_translations
+        WHERE content_element_id IN (${elementIds.map(() => '?').join(',')})`,
+    )
+      .bind(...elementIds)
+      .all<ContentElementTranslationRow>()
+    : { results: [] as ContentElementTranslationRow[] };
+
+  return {
+    ...snapshot,
+    project_translations: projectTranslations.results,
+    project_step_translations: projectStepTranslations.results,
+    content_element_translations: contentElementTranslations.results,
+  };
 }
 
 // Persists a snapshot row. Caller decides the source label.
@@ -1143,7 +1212,7 @@ async function uniqueSlug(env: Env, baseSlug: string): Promise<string> {
 // create) and the slug. The whole effect is one atomic D1 batch.
 async function importSnapshot(
   env: Env,
-  payload: SnapshotShape,
+  payload: BundleSnapshotShape,
   opts: {
     mode: 'create' | 'replace';
     targetProjectId?: string;
@@ -1194,6 +1263,8 @@ async function importSnapshot(
       : e.parent_id;
     return { ...e, id: uuid(), parent_id: newParentId };
   });
+  const elementIdMap = new Map<string, string>();
+  payload.elements.forEach((oldEl, idx) => elementIdMap.set(oldEl.id, newElements[idx].id));
 
   // Build the atomic batch.
   const stmts: D1PreparedStatement[] = [];
@@ -1212,6 +1283,7 @@ async function importSnapshot(
           .bind(...existingIds),
       );
     }
+    stmts.push(env.DB.prepare('DELETE FROM project_translations WHERE project_id = ?').bind(destProjectId));
     stmts.push(env.DB.prepare('DELETE FROM project_steps WHERE project_id = ?').bind(destProjectId));
     // UPDATE the existing project row with imported metadata; id+slug preserved.
     const p = payload.project;
@@ -1296,6 +1368,55 @@ async function importSnapshot(
     );
   }
 
+  for (const tr of payload.project_translations ?? []) {
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO project_translations (project_id, language, title, description, seo_title, seo_description, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(project_id, language) DO UPDATE SET
+             title = excluded.title,
+             description = excluded.description,
+             seo_title = excluded.seo_title,
+             seo_description = excluded.seo_description,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(destProjectId, tr.language, tr.title, tr.description, tr.seo_title, tr.seo_description),
+    );
+  }
+
+  for (const tr of payload.project_step_translations ?? []) {
+    const mappedStepId = stepIdMap.get(tr.step_id);
+    if (!mappedStepId) continue;
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO project_step_translations (step_id, language, title, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(step_id, language) DO UPDATE SET
+             title = excluded.title,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(mappedStepId, tr.language, tr.title),
+    );
+  }
+
+  for (const tr of payload.content_element_translations ?? []) {
+    const mappedElementId = elementIdMap.get(tr.content_element_id);
+    if (!mappedElementId) continue;
+    stmts.push(
+      env.DB
+        .prepare(
+          `INSERT INTO content_element_translations (content_element_id, language, content, updated_at)
+           VALUES (?, ?, ?, datetime('now'))
+           ON CONFLICT(content_element_id, language) DO UPDATE SET
+             content = excluded.content,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(mappedElementId, tr.language, tr.content),
+    );
+  }
+
   await env.DB.batch(stmts);
   await invalidateProjectCache(env, destSlug);
   if (opts.mode === 'create') {
@@ -1315,6 +1436,9 @@ projectRoutes.post(
       project: Project;
       steps: ProjectStep[];
       elements: ContentElement[];
+      project_translations?: ProjectTranslationRow[];
+      project_step_translations?: ProjectStepTranslationRow[];
+      content_element_translations?: ContentElementTranslationRow[];
       mode: 'create' | 'replace';
       target_project_id?: string;
       label?: string;
@@ -1330,6 +1454,8 @@ projectRoutes.post(
     if (body.manifest?.format_version !== 1) {
       return c.json({ error: `Unsupported bundle format: ${body.manifest?.format_version}` }, 400);
     }
+
+    await ensureI18nSchema(c.env);
 
     const userId = (c.get('userId' as never) as string | null) ?? null;
 
@@ -1351,6 +1477,9 @@ projectRoutes.post(
         project: body.project,
         steps: body.steps,
         elements: body.elements,
+        project_translations: Array.isArray(body.project_translations) ? body.project_translations : [],
+        project_step_translations: Array.isArray(body.project_step_translations) ? body.project_step_translations : [],
+        content_element_translations: Array.isArray(body.content_element_translations) ? body.content_element_translations : [],
       }, {
         mode: body.mode,
         targetProjectId: body.target_project_id,
@@ -1377,9 +1506,10 @@ projectRoutes.post(
 projectRoutes.get('/:id/export-data', requireAdmin, async (c) => {
   const projectId = c.req.param('id');
   const includeVideo = c.req.query('include_video') === '1';
-  let snapshot: SnapshotShape;
+  await ensureI18nSchema(c.env);
+  let snapshot: BundleSnapshotShape;
   try {
-    snapshot = await buildSnapshot(c.env, projectId);
+    snapshot = await buildBundleSnapshot(c.env, projectId);
   } catch (e) {
     return c.json({ error: String(e) }, 404);
   }
@@ -1399,6 +1529,9 @@ projectRoutes.get('/:id/export-data', requireAdmin, async (c) => {
     project: snapshot.project,
     steps: snapshot.steps,
     elements: snapshot.elements,
+    project_translations: snapshot.project_translations,
+    project_step_translations: snapshot.project_step_translations,
+    content_element_translations: snapshot.content_element_translations,
     media,
   });
 });

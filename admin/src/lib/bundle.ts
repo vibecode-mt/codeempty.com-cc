@@ -1,5 +1,14 @@
 import { zip, unzip } from 'fflate';
-import type { Project, ProjectStep, ContentElement, ExportData, BundleManifest } from '../api';
+import type {
+  Project,
+  ProjectStep,
+  ContentElement,
+  ExportData,
+  BundleManifest,
+  ProjectTranslation,
+  ProjectStepTranslation,
+  ContentElementTranslation,
+} from '../api';
 export type { ExportData, BundleManifest };
 
 export interface BundleProgress {
@@ -66,6 +75,9 @@ export async function buildBundle(
       project: rewritten.project,
       steps: data.steps,
       elements: rewritten.elements,
+      project_translations: data.project_translations ?? [],
+      project_step_translations: data.project_step_translations ?? [],
+      content_element_translations: data.content_element_translations ?? [],
     }, null, 2)),
     {},
   ];
@@ -115,6 +127,9 @@ export interface ParsedBundle {
   project: Project;
   steps: ProjectStep[];
   elements: ContentElement[];
+  project_translations: ProjectTranslation[];
+  project_step_translations: ProjectStepTranslation[];
+  content_element_translations: ContentElementTranslation[];
   media: Map<string, Uint8Array>; // key (without "media/" prefix) → bytes
 }
 
@@ -139,6 +154,9 @@ export async function readBundle(blob: Blob): Promise<ParsedBundle> {
     project: Project;
     steps: ProjectStep[];
     elements: ContentElement[];
+    project_translations?: ProjectTranslation[];
+    project_step_translations?: ProjectStepTranslation[];
+    content_element_translations?: ContentElementTranslation[];
   };
 
   const media = new Map<string, Uint8Array>();
@@ -153,6 +171,9 @@ export async function readBundle(blob: Blob): Promise<ParsedBundle> {
     project: projectPayload.project,
     steps: projectPayload.steps,
     elements: projectPayload.elements,
+    project_translations: Array.isArray(projectPayload.project_translations) ? projectPayload.project_translations : [],
+    project_step_translations: Array.isArray(projectPayload.project_step_translations) ? projectPayload.project_step_translations : [],
+    content_element_translations: Array.isArray(projectPayload.content_element_translations) ? projectPayload.content_element_translations : [],
     media,
   };
 }

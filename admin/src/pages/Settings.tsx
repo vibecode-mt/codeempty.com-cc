@@ -1,6 +1,23 @@
 import { useEffect, useState } from 'react';
 import { api, type SiteExportPayload } from '../api';
 import { LANGUAGE_OPTIONS, languageLabel } from '../lib/languages';
+import { buildSiteArchive, readSiteArchive, rewritePayloadForImport, type SiteTransferProgress } from '../lib/site-transfer';
+
+function inferMime(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'png': return 'image/png';
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg';
+    case 'gif': return 'image/gif';
+    case 'webp': return 'image/webp';
+    case 'svg': return 'image/svg+xml';
+    case 'mp4': return 'video/mp4';
+    case 'webm': return 'video/webm';
+    case 'mov': return 'video/quicktime';
+    default: return 'application/octet-stream';
+  }
+}
 
 export default function Settings() {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
@@ -27,7 +44,9 @@ export default function Settings() {
   const [siteTransferMessage, setSiteTransferMessage] = useState('');
   const [siteImportLoading, setSiteImportLoading] = useState(false);
   const [siteImportPayload, setSiteImportPayload] = useState<SiteExportPayload | null>(null);
+  const [siteImportMedia, setSiteImportMedia] = useState<Map<string, Uint8Array>>(new Map());
   const [siteImportMode, setSiteImportMode] = useState<'merge' | 'replace'>('merge');
+  const [siteTransferProgress, setSiteTransferProgress] = useState<SiteTransferProgress | null>(null);
 
   useEffect(() => {
     api.getI18nSettings()
@@ -146,37 +165,51 @@ export default function Settings() {
   async function handleExportSite() {
     setSiteExportLoading(true);
     setSiteTransferMessage('');
+    setSiteTransferProgress(null);
     try {
       const payload = await api.exportSite(siteExportIncludeProjects);
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const hasMedia = siteExportIncludeProjects && Array.isArray(payload.media) && payload.media.length > 0;
+      const blob = hasMedia
+        ? await buildSiteArchive(payload, (p) => setSiteTransferProgress(p))
+        : new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `site-export-${payload.exported_at.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      a.download = `site-export-${payload.exported_at.slice(0, 19).replace(/[:T]/g, '-')}${hasMedia ? '.codeempty-site' : '.json'}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 100);
-      setSiteTransferMessage(`Site export ready (${payload.includes_projects ? 'with' : 'without'} projects).`);
+      setSiteTransferMessage(
+        hasMedia
+          ? `Site export ready with full media (${payload.media!.length} files).`
+          : `Site export ready (${payload.includes_projects ? 'with' : 'without'} projects).`,
+      );
     } catch (e) {
       setSiteTransferMessage(String(e));
     } finally {
       setSiteExportLoading(false);
+      setSiteTransferProgress(null);
     }
   }
 
   async function handleImportFile(file: File) {
     setSiteTransferMessage('');
+    setSiteTransferProgress(null);
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as SiteExportPayload;
+      const parsedArchive = await readSiteArchive(file);
+      const parsed = parsedArchive.payload;
       if (parsed?.format_version !== 1 || !parsed.tables || typeof parsed.tables !== 'object') {
         throw new Error('Invalid export file');
       }
       setSiteImportPayload(parsed);
-      setSiteTransferMessage(`Loaded export from ${parsed.exported_at} (${parsed.includes_projects ? 'includes' : 'excludes'} projects).`);
+      setSiteImportMedia(parsedArchive.media);
+      setSiteTransferMessage(
+        `Loaded export from ${parsed.exported_at} (${parsed.includes_projects ? 'includes' : 'excludes'} projects, ${parsedArchive.media.size} media files).`,
+      );
     } catch (e) {
       setSiteImportPayload(null);
+      setSiteImportMedia(new Map());
       setSiteTransferMessage(String(e));
     }
   }
@@ -189,8 +222,29 @@ export default function Settings() {
     if (siteImportMode === 'replace' && !confirm('Replace mode will clear existing site content before importing. Continue?')) return;
     setSiteImportLoading(true);
     setSiteTransferMessage('');
+    setSiteTransferProgress(null);
     try {
-      const result = await api.importSite(siteImportPayload, siteImportMode);
+      let payloadForImport = siteImportPayload;
+      if (siteImportMedia.size > 0) {
+        const keyMap = new Map<string, string>();
+        const mediaEntries = Array.from(siteImportMedia.entries());
+        for (let i = 0; i < mediaEntries.length; i++) {
+          const [oldKey, bytes] = mediaEntries[i];
+          setSiteTransferProgress({
+            phase: 'uploading-media',
+            current: i,
+            total: mediaEntries.length,
+            label: `Uploading ${oldKey}`,
+          });
+          const blob = new Blob([bytes as unknown as BlobPart], { type: inferMime(oldKey) });
+          const uploadFile = new File([blob], oldKey, { type: inferMime(oldKey) });
+          const { key: newKey } = await api.uploadMedia(uploadFile);
+          keyMap.set(oldKey, newKey);
+        }
+        payloadForImport = rewritePayloadForImport(siteImportPayload, keyMap);
+      }
+
+      const result = await api.importSite(payloadForImport, siteImportMode);
       setSiteTransferMessage(
         result.mode === 'replace'
           ? 'Site import complete. Existing content was replaced.'
@@ -200,6 +254,7 @@ export default function Settings() {
       setSiteTransferMessage(String(e));
     } finally {
       setSiteImportLoading(false);
+      setSiteTransferProgress(null);
     }
   }
 
@@ -387,7 +442,7 @@ export default function Settings() {
       <div className="bg-white border rounded-xl p-6 space-y-4">
         <h2 className="font-semibold">Site Backup & Restore</h2>
         <p className="text-sm text-gray-500">
-          Export/import your site data as JSON. Media files are not included. Project inclusion is optional.
+          Export/import your site data. When "Include projects" is checked, the export includes all media files too.
         </p>
 
         <div className="border rounded-lg p-4 space-y-3">
@@ -415,7 +470,7 @@ export default function Settings() {
             <label className="block text-sm font-medium mb-1">Export file (.json)</label>
             <input
               type="file"
-              accept=".json,application/json"
+              accept=".json,.zip,.codeempty-site,application/json,application/zip"
               onChange={(e) => {
                 const f = e.currentTarget.files?.[0];
                 if (f) handleImportFile(f);
@@ -442,6 +497,25 @@ export default function Settings() {
             {siteImportLoading ? 'Importing…' : 'Import Site'}
           </button>
         </div>
+
+        {siteTransferProgress && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span>{siteTransferProgress.label}</span>
+              <span className="font-mono text-xs">
+                {siteTransferProgress.total > 0 ? `${siteTransferProgress.current} / ${siteTransferProgress.total}` : '…'}
+              </span>
+            </div>
+            {siteTransferProgress.total > 0 && (
+              <div className="w-full h-2 bg-blue-100 rounded overflow-hidden">
+                <div
+                  className="h-full bg-blue-600 transition-all"
+                  style={{ width: `${Math.min(100, Math.round((siteTransferProgress.current / siteTransferProgress.total) * 100))}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {siteTransferMessage && <p className="text-sm text-gray-600">{siteTransferMessage}</p>}
       </div>

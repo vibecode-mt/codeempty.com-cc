@@ -74,6 +74,9 @@ export const api = {
     project: Project;
     steps: ProjectStep[];
     elements: ContentElement[];
+    project_translations?: ProjectTranslation[];
+    project_step_translations?: ProjectStepTranslation[];
+    content_element_translations?: ContentElementTranslation[];
     mode: 'create' | 'replace';
     target_project_id?: string;
     label?: string;
@@ -330,12 +333,34 @@ export interface ExportData {
   project: Project;
   steps: ProjectStep[];
   elements: ContentElement[];
+  project_translations: ProjectTranslation[];
+  project_step_translations: ProjectStepTranslation[];
+  content_element_translations: ContentElementTranslation[];
   media: { key: string; url: string }[];
+}
+export interface ProjectTranslation {
+  project_id: string;
+  language: string;
+  title: string | null;
+  description: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+}
+export interface ProjectStepTranslation {
+  step_id: string;
+  language: string;
+  title: string | null;
+}
+export interface ContentElementTranslation {
+  content_element_id: string;
+  language: string;
+  content: string | null;
 }
 export interface SiteExportPayload {
   format_version: number;
   exported_at: string;
   includes_projects: boolean;
+  media?: Array<{ key: string; url: string }>;
   tables: Record<string, Array<Record<string, unknown>>>;
 }
 

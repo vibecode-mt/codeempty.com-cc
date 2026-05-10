@@ -177,7 +177,7 @@ Drop a CapCut `draft_content.json`, an `.srt`, or a `.vtt` file into **📥 Impo
 
 ### Bundle export / import
 
-**📦 Export bundle** downloads `<slug>.codeempty` — a ZIP containing `manifest.json`, `project.json`, and `media/<key>` for every R2 file the project references. **📥 Import bundle** uploads that bundle to a fresh project (with auto-suffixed slug) or replaces an existing one (with auto-snapshot first).
+**📦 Export bundle** downloads `<slug>.codeempty` — a ZIP containing `manifest.json`, `project.json`, project translations, and `media/<key>` for every selected R2 file the project references (source video optional). **📥 Import bundle** uploads that bundle to a fresh project (with auto-suffixed slug) or replaces an existing one (with auto-snapshot first), restoring translations too.
 
 ### Publish to a remote instance
 
@@ -292,8 +292,9 @@ POST   /api/cache/invalidate/:key             single key (write)
 ### Settings backup/restore
 
 ```
-GET    /api/settings/export?include_projects=1|0      export site JSON (write)
-POST   /api/settings/import                            import site JSON (write)
+GET    /api/settings/export?include_projects=1|0      export site data JSON (write)
+                                                      when include_projects=1, response includes a full media list
+POST   /api/settings/import                            import site payload (write)
                                                       body: { payload, mode: "merge" | "replace" }
 ```
 

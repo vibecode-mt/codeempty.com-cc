@@ -12,6 +12,7 @@ interface SiteExportPayload {
   format_version: number;
   exported_at: string;
   includes_projects: boolean;
+  media?: Array<{ key: string; url: string }>;
   tables: Record<string, Array<Record<string, unknown>>>;
 }
 
@@ -77,6 +78,7 @@ settingsRoutes.get('/export', requireAdmin, async (c) => {
     format_version: 1,
     exported_at: new Date().toISOString(),
     includes_projects: includeProjects,
+    media: includeProjects ? (await listAllMediaKeys(c.env)).map((key) => ({ key, url: `/api/media/${key}` })) : [],
     tables,
   };
 
@@ -240,4 +242,15 @@ async function invalidateAllCaches(env: Env): Promise<void> {
     env.PAGES_KV.delete('blog:index'),
     env.DB.prepare('DELETE FROM cache_keys').run(),
   ]);
+}
+
+async function listAllMediaKeys(env: Env): Promise<string[]> {
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const listed: R2Objects = await env.MEDIA.list({ cursor });
+    keys.push(...listed.objects.map((obj) => obj.key));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+  return keys;
 }
