@@ -232,6 +232,8 @@ export const api = {
     req<FormSubmission>('PUT', `/forms/${id}/submissions/${submissionId}`, b),
   deleteFormSubmission: (id: string, submissionId: string) =>
     req<{ ok: boolean }>('DELETE', `/forms/${id}/submissions/${submissionId}`),
+   testFormWebhook: (id: string) =>
+     req<{ webhook_url: string; webhook_configured: boolean; test_result: { ok: boolean; error?: string }; payload: unknown }>('POST', `/forms/${id}/test-webhook`),
 };
 
 // Shared types (duplicated from src/types.ts for the admin bundle)
@@ -443,4 +445,5 @@ export interface TranslationImport {
 }
 
 export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element' | 'form' | 'site';
+
 

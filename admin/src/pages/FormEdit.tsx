@@ -116,6 +116,19 @@ export default function FormEdit() {
       setTranslationSaving(false);
     }
   }
+  async function testWebhook() {
+    if (!id) return;
+    setTestingWebhook(true);
+    setWebhookTestResult(null);
+    try {
+      const result = await api.testFormWebhook(id);
+      setWebhookTestResult(result.test_result);
+    } catch (e) {
+      setWebhookTestResult({ ok: false, error: String(e) });
+    } finally {
+      setTestingWebhook(false);
+    }
+  }
 
   async function addSubmission() {
     if (!id) return;
@@ -437,5 +450,6 @@ function buildTranslatedFields(baseFields: FormField[], raw: string): FormField[
     };
   });
 }
+
 
 
