@@ -141,58 +141,67 @@ async function renderFormWidget(env: Env, content: string, language: string): Pr
   ${captchaScript}
   <script>
   (function () {
-    const root = document.currentScript && document.currentScript.previousElementSibling;
-    if (!root) return;
-    const form = root.querySelector('.contact-form');
-    const statusEl = root.querySelector('.contact-status');
-    if (!form || !statusEl) return;
-    form.addEventListener('submit', async function (ev) {
-      ev.preventDefault();
-      statusEl.textContent = 'Submitting...';
-      statusEl.className = 'contact-status';
-      const data = new FormData(form);
-      const fields = Object.fromEntries(data.entries());
-      form.querySelectorAll('input[type="checkbox"][name]').forEach((el) => { fields[el.name] = el.checked; });
-      let captchaToken = undefined;
-      ${recaptchaV3Script}
-      try {
-        if (!captchaToken) {
-          const turnstileEl = form.querySelector('.cf-turnstile');
-          if (turnstileEl && window.turnstile) captchaToken = window.turnstile.getResponse(turnstileEl);
+    function initForm() {
+      const root = document.querySelector('[data-form-slug="${escJs(form.slug)}"]');
+      if (!root) return;
+      const formEl = root.querySelector('.contact-form');
+      const statusEl = root.querySelector('.contact-status');
+      if (!formEl || !statusEl) return;
+      
+      formEl.addEventListener('submit', async function (ev) {
+        ev.preventDefault();
+        statusEl.textContent = 'Submitting...';
+        statusEl.className = 'contact-status';
+        const data = new FormData(formEl);
+        const fields = Object.fromEntries(data.entries());
+        formEl.querySelectorAll('input[type="checkbox"][name]').forEach((el) => { fields[el.name] = el.checked; });
+        let captchaToken = undefined;
+        ${recaptchaV3Script}
+        try {
+          if (!captchaToken) {
+            const turnstileEl = formEl.querySelector('.cf-turnstile');
+            if (turnstileEl && window.turnstile) captchaToken = window.turnstile.getResponse(turnstileEl);
+          }
+          if (!captchaToken) {
+            const recaptchaEl = formEl.querySelector('.g-recaptcha');
+            if (recaptchaEl && typeof grecaptcha !== 'undefined') captchaToken = grecaptcha.getResponse();
+          }
+        } catch (_) {}
+        try {
+          const resp = await fetch('/api/forms/${escJs(form.slug)}/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields,
+              source_page_slug: location.pathname.replace(/^\\//, '') || 'home',
+              captcha_token: captchaToken
+            }),
+          });
+          const json = await resp.json();
+          if (!resp.ok) throw new Error(json.error || 'Submission failed');
+          if (json.redirect_to) {
+            location.href = json.redirect_to;
+            return;
+          }
+          if (json.summary && typeof json.summary.total !== 'undefined') {
+            statusEl.textContent = (json.message || 'Submitted') + ' Total responses: ' + json.summary.total;
+          } else {
+            statusEl.textContent = json.message || 'Submitted';
+          }
+          statusEl.classList.add('ok');
+          formEl.reset();
+        } catch (err) {
+          statusEl.textContent = (err && err.message) ? err.message : 'Submission failed';
+          statusEl.classList.add('error');
         }
-        if (!captchaToken) {
-          const recaptchaEl = form.querySelector('.g-recaptcha');
-          if (recaptchaEl && typeof grecaptcha !== 'undefined') captchaToken = grecaptcha.getResponse();
-        }
-      } catch (_) {}
-      try {
-        const resp = await fetch('/api/forms/${escJs(form.slug)}/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fields,
-            source_page_slug: location.pathname.replace(/^\\//, '') || 'home',
-            captcha_token: captchaToken
-          }),
-        });
-        const json = await resp.json();
-        if (!resp.ok) throw new Error(json.error || 'Submission failed');
-        if (json.redirect_to) {
-          location.href = json.redirect_to;
-          return;
-        }
-        if (json.summary && typeof json.summary.total !== 'undefined') {
-          statusEl.textContent = (json.message || 'Submitted') + ' Total responses: ' + json.summary.total;
-        } else {
-          statusEl.textContent = json.message || 'Submitted';
-        }
-        statusEl.classList.add('ok');
-        form.reset();
-      } catch (err) {
-        statusEl.textContent = (err && err.message) ? err.message : 'Submission failed';
-        statusEl.classList.add('error');
-      }
-    });
+      });
+    }
+    
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initForm);
+    } else {
+      initForm();
+    }
   })();
   </script>`;
 }
