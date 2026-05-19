@@ -12,13 +12,30 @@ interface D1MigrationRow {
 }
 
 async function ensureMigrationsTable(env: Env): Promise<void> {
-  await env.DB.exec(`
-    CREATE TABLE IF NOT EXISTS d1_migrations (
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS d1_migrations (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT UNIQUE NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
+    )`,
+  ).run();
+}
+
+/** Split a SQL script into individual statements and run each one. */
+async function execSqlScript(db: Env['DB'], sql: string): Promise<void> {
+  // Split on semicolons that end a statement (not inside strings/comments)
+  // For our migration files this simple split is safe — no semicolons inside string literals
+  const statements = sql
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+  const stmts = statements.map((s) => db.prepare(s));
+  if (stmts.length === 1) {
+    await stmts[0].run();
+  } else if (stmts.length > 1) {
+    await db.batch(stmts);
+  }
 }
 
 migrationRoutes.get('/', requireAdmin, async (c) => {
@@ -57,7 +74,7 @@ migrationRoutes.post('/apply', requireAdmin, async (c) => {
 
   for (const migration of pending) {
     try {
-      await c.env.DB.exec(migration.sql);
+      await execSqlScript(c.env.DB, migration.sql);
       await c.env.DB
         .prepare("INSERT INTO d1_migrations (name, applied_at) VALUES (?, datetime('now'))")
         .bind(migration.name)
