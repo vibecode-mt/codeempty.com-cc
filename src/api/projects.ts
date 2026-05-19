@@ -361,13 +361,54 @@ projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
   }
 
   const defaultTags = normalizeTags(body.default_tags);
+  const existingSteps = await c.env.DB.prepare(
+    'SELECT id, sort_order, video_timestamp_ms FROM project_steps WHERE project_id = ? ORDER BY sort_order ASC',
+  )
+    .bind(projectId)
+    .all<{ id: string; sort_order: number; video_timestamp_ms: number | null }>();
 
   const ts = now();
   const stmts: D1PreparedStatement[] = [];
-  const createdSteps: { id: string; sort_order: number }[] = [];
+  const createdSteps: { id: string }[] = [];
+  const touchedStepIds = new Set<string>();
+  const stepAnchors: Array<{ id: string; sort_order: number; timestamp_ms: number | null }> = existingSteps.results.map((s) => ({
+    id: s.id,
+    sort_order: s.sort_order,
+    timestamp_ms: s.video_timestamp_ms,
+  }));
+  const elementSortByStep = new Map<string, number>();
+  for (const step of existingSteps.results) {
+    const maxEl = await c.env.DB.prepare(
+      "SELECT COALESCE(MAX(sort_order), -1) AS m FROM content_elements WHERE parent_type = 'project_step' AND parent_id = ?",
+    )
+      .bind(step.id)
+      .first<{ m: number }>();
+    elementSortByStep.set(step.id, maxEl?.m ?? -1);
+  }
+
   let currentStepId: string | null = null;
-  let stepSort = -1;
-  let elementSort = 0;
+  let stepSort = existingSteps.results.reduce((max, s) => Math.max(max, s.sort_order), -1);
+
+  const findStepForTimestamp = (timestampMs: number): string | null => {
+    const withTs = [...stepAnchors]
+      .filter((s) => s.timestamp_ms != null)
+      .sort((a, b) => {
+        if (a.timestamp_ms! !== b.timestamp_ms!) return a.timestamp_ms! - b.timestamp_ms!;
+        return a.sort_order - b.sort_order;
+      });
+
+    if (withTs.length > 0) {
+      let selected = withTs[0].id;
+      for (const s of withTs) {
+        if (timestampMs >= s.timestamp_ms!) selected = s.id;
+        else break;
+      }
+      return selected;
+    }
+
+    const byOrder = [...stepAnchors].sort((a, b) => a.sort_order - b.sort_order);
+    return byOrder[0]?.id ?? null;
+  };
 
   // Group captions: steps are standalone, elements follow their preceding step
   for (const caption of body.captions) {
@@ -378,7 +419,6 @@ projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
       const stepId = uuid();
       stepSort++;
       currentStepId = stepId;
-      elementSort = 0;
 
       stmts.push(
         c.env.DB.prepare(
@@ -387,13 +427,19 @@ projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
         ).bind(stepId, projectId, caption.text, stepSort, caption.timestampMs, captionTags, ts, ts),
       );
 
-      createdSteps.push({ id: stepId, sort_order: stepSort });
+      createdSteps.push({ id: stepId });
+      stepAnchors.push({ id: stepId, sort_order: stepSort, timestamp_ms: caption.timestampMs });
+      elementSortByStep.set(stepId, -1);
     } else if (caption.type === 'element') {
-      if (!currentStepId) {
-        return c.json({ error: 'First caption must be a step, not an element' }, 400);
+      const targetStepId = findStepForTimestamp(caption.timestampMs) ?? currentStepId;
+      if (!targetStepId) {
+        return c.json({ error: 'Cannot import elements because the project has no steps' }, 400);
       }
 
       const elementId = uuid();
+      const nextSort = (elementSortByStep.get(targetStepId) ?? -1) + 1;
+      elementSortByStep.set(targetStepId, nextSort);
+      touchedStepIds.add(targetStepId);
       stmts.push(
         c.env.DB.prepare(
           `INSERT INTO content_elements (id, parent_type, parent_id, type, content, sort_order, video_timestamp_ms, tags, created_at, updated_at)
@@ -401,18 +447,16 @@ projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
         ).bind(
           elementId,
           'project_step',
-          currentStepId,
+          targetStepId,
           'description',
           caption.text,
-          elementSort,
+          nextSort,
           caption.timestampMs,
           captionTags,
           ts,
           ts,
         ),
       );
-
-      elementSort++;
     }
   }
 
@@ -424,9 +468,9 @@ projectRoutes.post('/:id/import-captions', requireAdmin, async (c) => {
   // Re-sort all steps by timestamp
   await resortStepsByTimestamp(c.env, projectId);
 
-  // Re-sort elements within each created step
-  for (const step of createdSteps) {
-    await resortElementsByTimestamp(c.env, step.id);
+  // Re-sort elements within every step we touched during import.
+  for (const stepId of touchedStepIds) {
+    await resortElementsByTimestamp(c.env, stepId);
   }
 
   // Invalidate cache

@@ -86,6 +86,7 @@ export default function ProjectEdit() {
   // Drag state for steps
   const dragStep = useRef<number | null>(null);
   const [dragOverStep, setDragOverStep] = useState<number | null>(null);
+  const [draggedElement, setDraggedElement] = useState<{ id: string; fromParentId: string } | null>(null);
 
   // Caption import + SRT export + bulk delete state
   const [showCaptionImport, setShowCaptionImport] = useState(false);
@@ -416,6 +417,62 @@ export default function ProjectEdit() {
     await api.reorderSteps(orders);
   }
 
+  async function moveElementAcrossSteps(payload: {
+    id: string;
+    fromParentId: string;
+    toParentId: string;
+    toIndex: number;
+  }) {
+    const { id: elementId, fromParentId, toParentId } = payload;
+    const toIndex = Math.max(0, payload.toIndex);
+    if (fromParentId === toParentId) return;
+
+    const source = [...(stepContent[fromParentId] ?? [])];
+    const target = [...(stepContent[toParentId] ?? [])];
+    const moving = source.find((e) => e.id === elementId);
+    if (!moving) return;
+
+    const nextSource = source.filter((e) => e.id !== elementId);
+    const insertAt = Math.min(toIndex, target.length);
+    const nextTarget = [...target];
+    nextTarget.splice(insertAt, 0, { ...moving, parent_id: toParentId });
+
+    setStepContent((prev) => ({
+      ...prev,
+      [fromParentId]: nextSource,
+      [toParentId]: nextTarget,
+    }));
+    setExpandedStepIds((prev) => new Set([...prev, fromParentId, toParentId]));
+
+    try {
+      await api.updateContent(elementId, { parent_type: 'project_step', parent_id: toParentId });
+      const orders = [
+        ...nextSource.map((el, i) => ({ id: el.id, sort_order: i })),
+        ...nextTarget.map((el, i) => ({ id: el.id, sort_order: i })),
+      ];
+      if (orders.length > 0) {
+        await api.reorderContent(orders);
+      }
+      setSteps((prev) => prev.map((s) =>
+        s.id === fromParentId || s.id === toParentId ? { ...s, updated_at: new Date().toISOString() } : s,
+      ));
+    } catch (e) {
+      setStepError(String(e));
+      const [reloadedSource, reloadedTarget] = await Promise.all([
+        api.listContent('project_step', fromParentId),
+        api.listContent('project_step', toParentId),
+      ]);
+      setStepContent((prev) => ({
+        ...prev,
+        [fromParentId]: reloadedSource,
+        [toParentId]: reloadedTarget,
+      }));
+      throw e;
+    } finally {
+      setDraggedElement(null);
+    }
+  }
+
   const pid = projectId ?? id;
 
   const visibleSteps = steps.filter((s) => {
@@ -701,6 +758,10 @@ export default function ProjectEdit() {
                   onCaptureFrame={videoKey ? () => videoCaptureRef.current?.() ?? Promise.resolve(null) : undefined}
                   manageTag={manageTag || undefined}
                   translationLanguage={translationLanguage || undefined}
+                  draggedElement={draggedElement}
+                  onElementDragStart={(payload) => setDraggedElement(payload)}
+                  onMoveElementToStep={moveElementAcrossSteps}
+                  onElementDragEnd={() => setDraggedElement(null)}
                 />
               </div>
             )}

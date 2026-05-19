@@ -65,10 +65,16 @@ contentRoutes.put('/:id', requireAdmin, async (c) => {
     .first<ContentElement>();
   if (!existing) return c.json({ error: 'Not found' }, 404);
 
+  const nextParentType = body.parent_type ?? existing.parent_type;
+  const nextParentId = body.parent_id ?? existing.parent_id;
+  const parentChanged = nextParentType !== existing.parent_type || nextParentId !== existing.parent_id;
+
   await c.env.DB.prepare(
-    'UPDATE content_elements SET type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, render_style=?, hidden=?, updated_at=? WHERE id=?',
+    'UPDATE content_elements SET parent_type=?, parent_id=?, type=?, content=?, sort_order=?, video_timestamp_ms=?, tags=?, render_style=?, hidden=?, updated_at=? WHERE id=?',
   )
     .bind(
+      nextParentType,
+      nextParentId,
       body.type ?? existing.type,
       body.content ?? existing.content,
       body.sort_order ?? existing.sort_order,
@@ -84,9 +90,18 @@ contentRoutes.put('/:id', requireAdmin, async (c) => {
   // Re-sort if timestamp changed
   if ('video_timestamp_ms' in body) {
     await resortElementsByTimestamp(c.env, existing.parent_type, existing.parent_id);
+    if (parentChanged) {
+      await resortElementsByTimestamp(c.env, nextParentType, nextParentId);
+    }
+  } else if (parentChanged) {
+    await resortElementsByTimestamp(c.env, existing.parent_type, existing.parent_id);
+    await resortElementsByTimestamp(c.env, nextParentType, nextParentId);
   }
 
   await invalidateParentCache(c.env, existing.parent_type, existing.parent_id);
+  if (parentChanged) {
+    await invalidateParentCache(c.env, nextParentType, nextParentId);
+  }
   return c.json(await c.env.DB.prepare('SELECT * FROM content_elements WHERE id = ?').bind(id).first<ContentElement>());
 });
 
@@ -176,12 +191,16 @@ async function invalidateParentCache(env: Env, parentType: ParentType, parentId:
   }
 
   if (key) {
-    const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
-      .bind(`${key}%`)
+    const keys = await env.DB.prepare(
+      'SELECT cache_key FROM cache_keys WHERE substr(cache_key, 1, ?) = ?',
+    )
+      .bind(key.length, key)
       .all<{ cache_key: string }>();
     await Promise.all([
       ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
-      env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${key}%`).run(),
+      env.DB.prepare('DELETE FROM cache_keys WHERE substr(cache_key, 1, ?) = ?')
+        .bind(key.length, key)
+        .run(),
     ]);
     if (parentType === 'blog_entry') await env.PAGES_KV.delete('blog:index');
     if (parentType === 'project_step') await env.PAGES_KV.delete('home');

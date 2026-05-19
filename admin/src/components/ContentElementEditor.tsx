@@ -104,11 +104,33 @@ interface Props {
   onCaptureFrame?: () => Promise<{ url: string; timestampMs: number } | null>;
   manageTag?: string;
   translationLanguage?: string;
+  draggedElement?: { id: string; fromParentId: string } | null;
+  onElementDragStart?: (payload: { id: string; fromParentId: string }) => void;
+  onMoveElementToStep?: (payload: {
+    id: string;
+    fromParentId: string;
+    toParentId: string;
+    toIndex: number;
+  }) => Promise<void>;
+  onElementDragEnd?: () => void;
 }
 
 const TYPES = ['title', 'description', 'image', 'youtube', 'url', 'prompt_code', 'user_comment', 'widget'];
 
-export default function ContentElementEditor({ parentType, parentId, elements, onChange, onSeek, onCaptureFrame, manageTag, translationLanguage }: Props) {
+export default function ContentElementEditor({
+  parentType,
+  parentId,
+  elements,
+  onChange,
+  onSeek,
+  onCaptureFrame,
+  manageTag,
+  translationLanguage,
+  draggedElement,
+  onElementDragStart,
+  onMoveElementToStep,
+  onElementDragEnd,
+}: Props) {
   const [adding, setAdding] = useState(false);
   const [newType, setNewType] = useState('description');
   const [newContent, setNewContent] = useState('');
@@ -281,6 +303,12 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   function onDragStart(e: React.DragEvent, index: number) {
     e.stopPropagation();
     dragIndex.current = index;
+    const el = elements[index];
+    if (el) {
+      onElementDragStart?.({ id: el.id, fromParentId: parentId });
+      e.dataTransfer.setData('text/plain', el.id);
+      e.dataTransfer.effectAllowed = 'move';
+    }
   }
 
   function onDragOver(e: React.DragEvent, index: number) {
@@ -292,10 +320,28 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
   async function onDrop(e: React.DragEvent, toIndex: number) {
     e.stopPropagation();
     e.preventDefault();
+    if (
+      draggedElement &&
+      draggedElement.fromParentId !== parentId &&
+      onMoveElementToStep
+    ) {
+      await onMoveElementToStep({
+        id: draggedElement.id,
+        fromParentId: draggedElement.fromParentId,
+        toParentId: parentId,
+        toIndex,
+      });
+      dragIndex.current = null;
+      setDragOver(null);
+      onElementDragEnd?.();
+      return;
+    }
+
     const fromIndex = dragIndex.current;
     if (fromIndex === null || fromIndex === toIndex) {
       dragIndex.current = null;
       setDragOver(null);
+      onElementDragEnd?.();
       return;
     }
     const next = [...elements];
@@ -306,6 +352,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
     dragIndex.current = null;
     setDragOver(null);
     await api.reorderContent(orders);
+    onElementDragEnd?.();
   }
 
   return (
@@ -318,6 +365,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
           onDragOver={(e) => onDragOver(e, i)}
           onDragLeave={(e) => { e.stopPropagation(); setDragOver(null); }}
           onDrop={(e) => onDrop(e, i)}
+          onDragEnd={() => onElementDragEnd?.()}
           className={`border rounded-lg bg-white overflow-hidden transition-all ${dragOver === i && dragIndex.current !== i ? 'border-blue-400 shadow-md' : ''}`}
         >
           <ElementRow
@@ -336,6 +384,20 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
           />
         </div>
       ))}
+
+      <div
+        onDragOver={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          setDragOver(elements.length);
+        }}
+        onDragLeave={(e) => {
+          e.stopPropagation();
+          setDragOver(null);
+        }}
+        onDrop={(e) => onDrop(e, elements.length)}
+        className={`h-3 rounded transition-all ${dragOver === elements.length ? 'bg-blue-100 border border-blue-300' : ''}`}
+      />
 
       {adding ? (
         <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
@@ -493,7 +555,7 @@ export default function ContentElementEditor({ parentType, parentId, elements, o
       )}
 
       {elements.length > 1 && !adding && (
-        <p className="text-xs text-gray-400 text-center">Drag elements to reorder</p>
+        <p className="text-xs text-gray-400 text-center">Drag elements to reorder or move them to another step</p>
       )}
     </div>
   );

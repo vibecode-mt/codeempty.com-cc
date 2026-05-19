@@ -7,6 +7,12 @@ interface CaptionWithType extends ParsedCaption {
   selected: boolean;
 }
 
+interface CaptionGroup {
+  groupId: string;
+  groupLabel: string;
+  items: CaptionWithType[];
+}
+
 function formatTimestamp(ms: number) {
   const total = ms / 1000;
   const h = Math.floor(total / 3600);
@@ -47,9 +53,10 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
         throw new Error('No captions found in file');
       }
 
-      // Sort by timestamp before assigning step/element types
-      const captions = [...rawCaptions].sort((a, b) => a.timestampMs - b.timestampMs);
       const isCapCutJson = file.name.toLowerCase().endsWith('.json');
+      const captions = isCapCutJson
+        ? [...rawCaptions]
+        : [...rawCaptions].sort((a, b) => a.timestampMs - b.timestampMs);
 
       // Auto-detect steps: first is always a step, then numbered items (e.g. "1.", "2.", "2a.")
       const stepRegex = /^\s*(\d+)([a-z]?)\./;
@@ -106,18 +113,35 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
     );
   };
 
+  const handleToggleGroupSelect = (groupId: string, nextSelected: boolean) => {
+    setParsed((prev) =>
+      prev.map((cap) => (cap.groupId === groupId ? { ...cap, selected: nextSelected } : cap)),
+    );
+  };
+
   const selectedItems = parsed.filter((c) => c.selected);
   const selectedSteps = selectedItems.filter((c) => c.type === 'step').length;
   const selectedElements = selectedItems.length - selectedSteps;
+  const groups = useMemo<CaptionGroup[]>(() => {
+    const byId = new Map<string, CaptionGroup>();
+    const ordered: CaptionGroup[] = [];
+    for (const cap of parsed) {
+      const groupId = cap.groupId || 'ungrouped';
+      const groupLabel = cap.groupLabel || 'Captions';
+      let group = byId.get(groupId);
+      if (!group) {
+        group = { groupId, groupLabel, items: [] };
+        byId.set(groupId, group);
+        ordered.push(group);
+      }
+      group.items.push(cap);
+    }
+    return ordered;
+  }, [parsed]);
 
   const handleImport = async () => {
     if (selectedItems.length === 0) {
       setError('Select at least one caption to import');
-      return;
-    }
-
-    if (selectedItems[0].type !== 'step') {
-      setError('First selected caption must be marked as a step');
       return;
     }
 
@@ -190,43 +214,64 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
                 details). ✓ = include in import.
               </p>
 
-              <div className="space-y-3 max-h-[28rem] overflow-y-auto">
-                {parsed.map((cap) => (
-                  <div
-                    key={cap.index}
-                    className={`p-3 border rounded flex items-start gap-3 ${
-                      !cap.selected
-                        ? 'border-gray-200 bg-white opacity-50'
-                        : cap.type === 'step'
-                        ? 'border-blue-300 bg-blue-50'
-                        : 'border-gray-200 bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={cap.selected}
-                      onChange={() => handleToggleSelect(cap.index)}
-                      className="w-4 h-4 mt-1 cursor-pointer shrink-0"
-                      title={cap.selected ? 'Skip this caption' : 'Include this caption'}
-                    />
-                    <button
-                      onClick={() => handleToggleType(cap.index)}
-                      disabled={cap.index === 0}
-                      title={cap.index === 0 ? 'First caption must be a step' : 'Click to toggle'}
-                      className={`px-3 py-1 rounded font-medium text-sm whitespace-nowrap flex-shrink-0 transition ${
-                        cap.type === 'step'
-                          ? 'bg-blue-500 text-white hover:bg-blue-600'
-                          : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-                      } ${cap.index === 0 ? 'opacity-75 cursor-not-allowed' : ''}`}
-                    >
-                      {cap.type === 'step' ? '📌 Step' : '📝 Element'}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 break-words">{cap.text}</p>
-                      <p className="text-xs text-gray-500 mt-1">{formatTimestamp(cap.timestampMs)}</p>
+              <div className="space-y-4 max-h-[28rem] overflow-y-auto">
+                {groups.map((group) => {
+                  const selectedCount = group.items.filter((i) => i.selected).length;
+                  const allSelected = selectedCount === group.items.length;
+                  return (
+                    <div key={group.groupId} className="border rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 border-b px-3 py-2 flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-gray-700">
+                          {group.groupLabel} ({selectedCount}/{group.items.length})
+                        </div>
+                        <button
+                          onClick={() => handleToggleGroupSelect(group.groupId, !allSelected)}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          {allSelected ? 'Deselect group' : 'Select group'}
+                        </button>
+                      </div>
+                      <div className="space-y-3 p-3">
+                        {group.items.map((cap) => (
+                          <div
+                            key={cap.index}
+                            className={`p-3 border rounded flex items-start gap-3 ${
+                              !cap.selected
+                                ? 'border-gray-200 bg-white opacity-50'
+                                : cap.type === 'step'
+                                  ? 'border-blue-300 bg-blue-50'
+                                  : 'border-gray-200 bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={cap.selected}
+                              onChange={() => handleToggleSelect(cap.index)}
+                              className="w-4 h-4 mt-1 cursor-pointer shrink-0"
+                              title={cap.selected ? 'Skip this caption' : 'Include this caption'}
+                            />
+                            <button
+                              onClick={() => handleToggleType(cap.index)}
+                              disabled={cap.index === 0}
+                              title={cap.index === 0 ? 'First caption must be a step' : 'Click to toggle'}
+                              className={`px-3 py-1 rounded font-medium text-sm whitespace-nowrap flex-shrink-0 transition ${
+                                cap.type === 'step'
+                                  ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                  : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                              } ${cap.index === 0 ? 'opacity-75 cursor-not-allowed' : ''}`}
+                            >
+                              {cap.type === 'step' ? '📌 Step' : '📝 Element'}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 break-words">{cap.text}</p>
+                              <p className="text-xs text-gray-500 mt-1">{formatTimestamp(cap.timestampMs)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {error && (
