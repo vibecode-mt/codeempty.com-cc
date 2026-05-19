@@ -187,7 +187,8 @@ export function rewriteForImport(
 ): { project: Project; elements: ContentElement[] } {
   const remap = (url: string | null | undefined): string | null => {
     if (!url) return url ?? null;
-    const m = url.match(/^\.?\/?media\/(.+)$/);
+    // Match both bundle format (./media/<key>) and direct API format (/api/media/<key>)
+    const m = url.match(/^(?:\.?\/?media|\/api\/media)\/(.+)$/);
     if (!m) return url;
     const oldKey = m[1];
     const newKey = keyMap.get(oldKey) ?? oldKey;
