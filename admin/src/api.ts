@@ -39,6 +39,10 @@ export const api = {
     req('POST', '/auth/change-password', { current_password, new_password }),
   listLogs: (limit = 100) => req<ExceptionLog[]>('GET', `/logs?limit=${encodeURIComponent(String(limit))}`),
 
+  // Migrations
+  listMigrations: () => req<{ migrations: MigrationStatus[] }>('GET', '/migrations'),
+  applyMigrations: () => req<{ ok: boolean; applied: MigrationApplyResult[]; message?: string }>('POST', '/migrations/apply'),
+
   // Projects
   listProjects: () => req<Project[]>('GET', '/projects'),
   createProject: (b: Partial<Project>) => req<Project>('POST', '/projects', b),
@@ -536,3 +540,14 @@ export interface TranslationImport {
 
 export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element' | 'form' | 'site';
 
+export interface MigrationStatus {
+  name: string;
+  applied: boolean;
+  applied_at: string | null;
+}
+
+export interface MigrationApplyResult {
+  name: string;
+  ok: boolean;
+  error?: string;
+}

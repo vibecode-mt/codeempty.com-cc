@@ -20,6 +20,7 @@ const nav = [
   { to: '/destinations', label: 'Destinations', abbr: 'Dst' },
   { to: '/settings', label: 'Settings', abbr: '⚙' },
   { to: '/logs', label: 'Logs', abbr: 'L' },
+  { to: '/migrations', label: 'Migrations', abbr: 'Mg' },
 ];
 
 export default function Layout({ user, onLogout, children }: Props) {
