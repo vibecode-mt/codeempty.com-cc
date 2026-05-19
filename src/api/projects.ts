@@ -915,13 +915,12 @@ async function buildSnapshot(env: Env, projectId: string): Promise<SnapshotShape
 
   let elements: ContentElement[] = [];
   if (steps.length > 0) {
-    const placeholders = steps.map(() => '?').join(',');
-    const elsResult = await env.DB.prepare(
-      `SELECT * FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders}) ORDER BY parent_id, sort_order ASC`,
-    )
-      .bind(...steps.map((s) => s.id))
-      .all<ContentElement>();
-    elements = elsResult.results;
+    elements = await chunkedSelectByIds<ContentElement>(
+      env,
+      steps.map((s) => s.id),
+      (placeholders) =>
+        `SELECT * FROM content_elements WHERE parent_type = 'project_step' AND parent_id IN (${placeholders}) ORDER BY parent_id, sort_order ASC`,
+    );
   }
 
   return { format_version: 1, project, steps, elements };
@@ -940,32 +939,48 @@ async function buildBundleSnapshot(env: Env, projectId: string): Promise<BundleS
     .bind(projectId)
     .all<ProjectTranslationRow>();
 
-  const projectStepTranslations = stepIds.length > 0
-    ? await env.DB.prepare(
-      `SELECT step_id, language, title
-         FROM project_step_translations
-        WHERE step_id IN (${stepIds.map(() => '?').join(',')})`,
-    )
-      .bind(...stepIds)
-      .all<ProjectStepTranslationRow>()
-    : { results: [] as ProjectStepTranslationRow[] };
+  const projectStepTranslations = await chunkedSelectByIds<ProjectStepTranslationRow>(
+    env,
+    stepIds,
+    (placeholders) =>
+      `SELECT step_id, language, title FROM project_step_translations WHERE step_id IN (${placeholders})`,
+  );
 
-  const contentElementTranslations = elementIds.length > 0
-    ? await env.DB.prepare(
-      `SELECT content_element_id, language, content
-         FROM content_element_translations
-        WHERE content_element_id IN (${elementIds.map(() => '?').join(',')})`,
-    )
-      .bind(...elementIds)
-      .all<ContentElementTranslationRow>()
-    : { results: [] as ContentElementTranslationRow[] };
+  const contentElementTranslations = await chunkedSelectByIds<ContentElementTranslationRow>(
+    env,
+    elementIds,
+    (placeholders) =>
+      `SELECT content_element_id, language, content FROM content_element_translations WHERE content_element_id IN (${placeholders})`,
+  );
 
   return {
     ...snapshot,
     project_translations: projectTranslations.results,
-    project_step_translations: projectStepTranslations.results,
-    content_element_translations: contentElementTranslations.results,
+    project_step_translations: projectStepTranslations,
+    content_element_translations: contentElementTranslations,
   };
+}
+
+// D1/SQLite has a limit of ~100 bound variables per statement. This helper
+// runs an IN-list query in chunks and concatenates the results so it works
+// for projects with hundreds of steps/elements.
+const SQL_VARS_CHUNK = 90;
+async function chunkedSelectByIds<T>(
+  env: Env,
+  ids: string[],
+  buildSql: (placeholders: string) => string,
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += SQL_VARS_CHUNK) {
+    const chunk = ids.slice(i, i + SQL_VARS_CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    const res = await env.DB.prepare(buildSql(placeholders))
+      .bind(...chunk)
+      .all<T>();
+    out.push(...res.results);
+  }
+  return out;
 }
 
 // Persists a snapshot row. Caller decides the source label.
