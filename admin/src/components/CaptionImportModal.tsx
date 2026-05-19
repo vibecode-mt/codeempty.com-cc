@@ -15,6 +15,10 @@ function formatTimestamp(ms: number) {
   return `${h > 0 ? String(h).padStart(2, '0') + ':' : ''}${String(m).padStart(2, '0')}:${s.padStart(4, '0')}`;
 }
 
+function hasSpeedPattern(text: string): boolean {
+  return /\b\d+\s*x\b/i.test(text);
+}
+
 interface CaptionImportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -45,6 +49,7 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
 
       // Sort by timestamp before assigning step/element types
       const captions = [...rawCaptions].sort((a, b) => a.timestampMs - b.timestampMs);
+      const isCapCutJson = file.name.toLowerCase().endsWith('.json');
 
       // Auto-detect steps: first is always a step, then numbered items (e.g. "1.", "2.", "2a.")
       const stepRegex = /^\s*(\d+)([a-z]?)\./;
@@ -72,7 +77,7 @@ export default function CaptionImportModal({ isOpen, onClose, onImport }: Captio
           ...cap,
           type,
           index: idx,
-          selected: true,
+          selected: !(isCapCutJson && hasSpeedPattern(cap.text)),
         };
       });
 

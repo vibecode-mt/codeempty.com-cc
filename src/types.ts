@@ -22,6 +22,18 @@ export interface Session {
   expires_at: string;
 }
 
+export interface ExceptionLog {
+  id: string;
+  created_at: string;
+  method: string;
+  path: string;
+  status: number;
+  error_name: string;
+  message: string;
+  stack: string | null;
+  user_agent: string | null;
+}
+
 export interface OAuthApp {
   id: string;
   name: string;

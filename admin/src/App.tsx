@@ -15,6 +15,7 @@ import Scripts from './pages/Scripts';
 import OAuthApps from './pages/OAuthApps';
 import Destinations from './pages/Destinations';
 import Settings from './pages/Settings';
+import Logs from './pages/Logs';
 import FormSetupGuide from './pages/ContactSetupGuide';
 import Forms from './pages/Forms';
 import FormEdit from './pages/FormEdit';
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/forms/:id" element={<FormEdit />} />
         <Route path="/forms/setup" element={<FormSetupGuide />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/logs" element={<Logs />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

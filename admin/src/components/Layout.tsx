@@ -19,6 +19,7 @@ const nav = [
   { to: '/oauth', label: 'API Apps', abbr: 'A' },
   { to: '/destinations', label: 'Destinations', abbr: 'Dst' },
   { to: '/settings', label: 'Settings', abbr: '⚙' },
+  { to: '/logs', label: 'Logs', abbr: 'L' },
 ];
 
 export default function Layout({ user, onLogout, children }: Props) {

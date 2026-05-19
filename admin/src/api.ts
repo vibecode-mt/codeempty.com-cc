@@ -37,6 +37,7 @@ export const api = {
   me: () => req<{ username: string; is_admin: number }>('GET', '/auth/me'),
   changePassword: (current_password: string, new_password: string) =>
     req('POST', '/auth/change-password', { current_password, new_password }),
+  listLogs: (limit = 100) => req<ExceptionLog[]>('GET', `/logs?limit=${encodeURIComponent(String(limit))}`),
 
   // Projects
   listProjects: () => req<Project[]>('GET', '/projects'),
@@ -332,6 +333,17 @@ export interface OAuthApp {
   id: string; name: string; client_id: string; scopes: string;
   created_by: string; created_at: string;
 }
+export interface ExceptionLog {
+  id: string;
+  created_at: string;
+  method: string;
+  path: string;
+  status: number;
+  error_name: string;
+  message: string;
+  stack: string | null;
+  user_agent: string | null;
+}
 export interface PublishDestination {
   id: string;
   name: string;
@@ -523,5 +535,4 @@ export interface TranslationImport {
 }
 
 export type EntityTranslationTarget = 'project' | 'page' | 'blog_entry' | 'project_step' | 'content_element' | 'form' | 'site';
-
 

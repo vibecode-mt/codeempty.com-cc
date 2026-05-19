@@ -307,12 +307,16 @@ async function resortElementsByTimestamp(env: Env, stepId: string) {
 
 async function invalidateProjectCache(env: Env, slug: string) {
   const keyPrefix = `project:${slug}`;
-  const keys = await env.DB.prepare('SELECT cache_key FROM cache_keys WHERE cache_key LIKE ?')
-    .bind(`${keyPrefix}%`)
+  const keys = await env.DB.prepare(
+    'SELECT cache_key FROM cache_keys WHERE substr(cache_key, 1, ?) = ?',
+  )
+    .bind(keyPrefix.length, keyPrefix)
     .all<{ cache_key: string }>();
   await Promise.all([
     ...keys.results.map((r) => env.PAGES_KV.delete(r.cache_key)),
-    env.DB.prepare('DELETE FROM cache_keys WHERE cache_key LIKE ?').bind(`${keyPrefix}%`).run(),
+    env.DB.prepare('DELETE FROM cache_keys WHERE substr(cache_key, 1, ?) = ?')
+      .bind(keyPrefix.length, keyPrefix)
+      .run(),
     invalidateProjectListCaches(env),
   ]);
 }
