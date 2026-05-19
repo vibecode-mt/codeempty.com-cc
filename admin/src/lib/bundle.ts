@@ -178,13 +178,20 @@ export async function readBundle(blob: Blob): Promise<ParsedBundle> {
   };
 }
 
-// Translate ./media/<key> URLs in a parsed bundle to /api/media/<newKey> using
-// a remap from oldKey → newKey produced when re-uploading media on import.
+// Translate ./media/<key> or /api/media/<key> URLs in a parsed bundle/export
+// to /api/media/<newKey> using a remap from oldKey → newKey produced when
+// re-uploading media on import. Both URL shapes must be supported because
+// PublishModal passes raw exportData (/api/media/<key>) while bundle import
+// passes parsed bundle data (./media/<key>). [v2]
 export function rewriteForImport(
   project: Project,
   elements: ContentElement[],
   keyMap: Map<string, string>,
 ): { project: Project; elements: ContentElement[] } {
+  const PUBLISH_REWRITE_VERSION = 2;
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __publishRewriteVersion?: number }).__publishRewriteVersion = PUBLISH_REWRITE_VERSION;
+  }
   const remap = (url: string | null | undefined): string | null => {
     if (!url) return url ?? null;
     // Match both bundle format (./media/<key>) and direct API format (/api/media/<key>)
